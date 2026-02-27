@@ -103,13 +103,14 @@ export default function RoundsPage() {
     );
 
     if (error || !newRound) { setCreating(false); return; }
+    const round = newRound as any;
 
     // Criar grupos para cada combinação slot × court selecionados
     if (groupCount > 0) {
       const activeSlots = slots.filter(s => selectedSlots.has(s.id));
       const activeCourts = courts.filter(c => selectedCourts.has(c.id));
       const groups = activeSlots.flatMap(s => activeCourts.map(c => ({
-        round_id: newRound.id,
+        round_id: round.id,
         time_slot_id: s.id,
         court_id: c.id,
         is_cancelled: false,
@@ -120,7 +121,7 @@ export default function RoundsPage() {
     setCreating(false);
     setShowModal(false);
     toast.success(isPt ? `Rodada ${nextNumber} criada!` : isEs ? `¡Jornada ${nextNumber} creada!` : `Round ${nextNumber} created!`);
-    router.push(`/app/leagues/${leagueId}/rounds/${newRound.id}`);
+    router.push(`/app/leagues/${leagueId}/rounds/${round.id}`);
   };
 
   const handleDeleteRound = async (r: Round) => {
