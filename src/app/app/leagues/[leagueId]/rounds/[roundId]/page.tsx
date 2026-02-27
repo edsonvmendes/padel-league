@@ -174,7 +174,8 @@ export default function RoundDetailPage() {
             db.from('league_rankings').select('*').eq('league_id', leagueId).eq('player_id', rp.player_id).single()
           );
           if (existing) {
-            await run(() => db.from('league_rankings').update({ total_points: existing.total_points + rp.points, updated_at: new Date().toISOString() }).eq('id', existing.id));
+            const ex = existing as any;
+            await run(() => db.from('league_rankings').update({ total_points: ex.total_points + rp.points, updated_at: new Date().toISOString() }).eq('id', ex.id));
           } else {
             await run(() => db.from('league_rankings').insert({ league_id: leagueId, player_id: rp.player_id, total_points: rp.points }));
           }
