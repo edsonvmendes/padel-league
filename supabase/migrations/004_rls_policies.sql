@@ -1,0 +1,2 @@
+-- RLS Policies completas
+-- Copie do conteúdo que te mostrei acima

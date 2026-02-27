@@ -1,0 +1,2 @@
+-- Triggers SQL completos  
+-- Copie do conteúdo que te mostrei acima
