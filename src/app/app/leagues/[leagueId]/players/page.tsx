@@ -42,6 +42,7 @@ export default function PlayersPage() {
 
   const [players, setPlayers] = useState<Player[]>([]);
   const [league, setLeague] = useState<League | null>(null);
+  const [availableLeagues, setAvailableLeagues] = useState<League[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeOnly, setActiveOnly] = useState(true);
@@ -50,22 +51,26 @@ export default function PlayersPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [importLeagueId, setImportLeagueId] = useState('');
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     if (user && leagueId) load();
   }, [user, leagueId]);
 
   const load = async () => {
-    const [{ data: playerData }, { data: leagueData }] = await Promise.all([
+    const [{ data: playerData }, { data: leagueData }, { data: leaguesData }] = await Promise.all([
       run(
         () => db.from('players').select('*').eq('league_id', leagueId).order('full_name'),
         isEs ? 'Error al cargar jugadoras' : isPt ? 'Erro ao carregar jogadoras' : 'Failed to load players'
       ),
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
+      run(() => db.from('leagues').select('*').eq('owner_user_id', user!.id).neq('id', leagueId).order('name')),
     ]);
 
     setPlayers(playerData || []);
     setLeague(leagueData || null);
+    setAvailableLeagues((leaguesData as League[]) || []);
     setLoading(false);
   };
 
@@ -177,6 +182,64 @@ export default function PlayersPage() {
       isEs ? 'Error al actualizar estado' : isPt ? 'Erro ao atualizar status' : 'Failed to update status'
     );
     load();
+  };
+
+  const importPlayersFromLeague = async () => {
+    if (!importLeagueId) {
+      toast.warning(isPt ? 'Selecione uma liga de origem.' : isEs ? 'Selecciona una liga de origen.' : 'Select a source league.');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const sourcePlayers = await runOrThrow(
+        () => db.from('players').select('*').eq('league_id', importLeagueId).eq('is_active', true).order('full_name'),
+        isPt ? 'Erro ao carregar jogadoras da liga de origem' : isEs ? 'Error al cargar jugadoras de la liga origen' : 'Failed to load source players'
+      );
+
+      const normalizedExisting = new Set(
+        players.map(player => player.full_name.trim().toLocaleLowerCase())
+      );
+
+      const toInsert = (sourcePlayers || [])
+        .filter((player: Player) => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
+        .map((player: Player) => ({
+          league_id: leagueId,
+          owner_user_id: user!.id,
+          full_name: player.full_name,
+          birthdate: player.birthdate,
+          payment: player.payment,
+          notes: player.notes,
+          is_active: true,
+        }));
+
+      if (toInsert.length === 0) {
+        toast.warning(
+          isPt
+            ? 'Nenhuma jogadora nova para importar. Os nomes ja existem nesta liga.'
+            : isEs
+              ? 'No hay jugadoras nuevas para importar. Los nombres ya existen en esta liga.'
+              : 'No new players to import. Those names already exist in this league.'
+        );
+        return;
+      }
+
+      await runOrThrow(
+        () => db.from('players').insert(toInsert),
+        isPt ? 'Erro ao importar jogadoras' : isEs ? 'Error al importar jugadoras' : 'Failed to import players'
+      );
+
+      toast.success(
+        isPt
+          ? `${toInsert.length} jogadora(s) importada(s).`
+          : isEs
+            ? `${toInsert.length} jugadora(s) importada(s).`
+            : `${toInsert.length} player(s) imported.`
+      );
+      load();
+    } finally {
+      setImporting(false);
+    }
   };
 
   const filtered = players.filter((player) => {
@@ -399,6 +462,46 @@ export default function PlayersPage() {
           </button>
         </div>
       </section>
+
+      {availableLeagues.length > 0 && (
+        <section className="card p-4 sm:p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+            <div className="flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
+                {isPt ? 'Importar base' : isEs ? 'Importar base' : 'Import roster'}
+              </p>
+              <p className="mt-1 text-sm text-neutral-600">
+                {isPt
+                  ? 'Puxe jogadoras ativas de outra liga sua. Nomes repetidos nesta liga sao ignorados.'
+                  : isEs
+                    ? 'Trae jugadoras activas de otra liga tuya. Los nombres repetidos en esta liga se ignoran.'
+                    : 'Pull active players from another one of your leagues. Duplicate names in this league are skipped.'}
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row lg:w-auto">
+              <select
+                className="input-field min-w-[240px]"
+                value={importLeagueId}
+                onChange={(event) => setImportLeagueId(event.target.value)}
+              >
+                <option value="">{isPt ? 'Selecionar liga de origem' : isEs ? 'Seleccionar liga origen' : 'Select source league'}</option>
+                {availableLeagues.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </select>
+              <button
+                onClick={importPlayersFromLeague}
+                disabled={!importLeagueId || importing}
+                className="inline-flex items-center justify-center rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:opacity-60"
+              >
+                {importing
+                  ? (isPt ? 'Importando...' : isEs ? 'Importando...' : 'Importing...')
+                  : (isPt ? 'Importar ativas' : isEs ? 'Importar activas' : 'Import active')}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {loading ? (
         <div className="card p-5 sm:p-6">
