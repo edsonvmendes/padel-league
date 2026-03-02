@@ -8,10 +8,9 @@ import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { Round, League, LeagueTimeSlot, Court, RoundCourtGroup, RoundCourtPlayer, Match, Player, Rules } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
 import { MATCH_PAIRINGS, calculateGroupPoints, isValidScore } from '@/lib/scoring-engine';
 import {
-  ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus, Bell,
+  ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus,
   Trophy, ChevronDown, ChevronUp, AlertTriangle, XCircle,
 } from 'lucide-react';
 
@@ -252,7 +251,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'NÃ£o foi possÃ­vel salvar o nome da suplente.' : isEs ? 'No se pudo guardar el nombre de la suplente.' : 'Could not save the substitute name.'
+        isPt ? 'Nao foi possivel salvar o nome da suplente.' : isEs ? 'No se pudo guardar el nombre de la suplente.' : 'Could not save the substitute name.'
       ));
     }
   };
@@ -302,7 +301,7 @@ export default function RoundDetailPage() {
 
           setActionError(getActionErrorMessage(
             error,
-            isPt ? 'NÃ£o foi possÃ­vel atualizar a quadra fÃ­sica.' : isEs ? 'No se pudo actualizar la cancha asignada.' : 'Could not update the physical court.'
+            isPt ? 'Nao foi possivel atualizar a quadra fisica.' : isEs ? 'No se pudo actualizar la cancha asignada.' : 'Could not update the physical court.'
           ));
           return;
         }
@@ -599,39 +598,7 @@ export default function RoundDetailPage() {
 
   const isClosed = round.status === 'closed';
   const physicalCourtsCount = league?.physical_courts_count || 6;
-  const attendanceIssues: any[] = [];
-  const levelNum = 0;
-  const g = { slot: null as { slot_time?: string } | null };
-  const attendanceLabel = (_value: string) => '';
 
-  const _unusedOpenAttendanceWhatsApp1 = () => {
-    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
-
-    const lines = [
-      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
-      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
-      '',
-      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
-      '',
-      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envía suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
-    ];
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
-  };
-  const _unusedOpenAttendanceWhatsApp2 = () => {
-    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
-
-    const lines = [
-      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
-      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
-      '',
-      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
-      '',
-      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envía suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
-    ];
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
-  };
 
   return (
     <div className="space-y-5">
@@ -804,28 +771,10 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
   onOpenWhatsApp: () => void;
 }) {
   const isEs = locale === 'es'; const isPt = locale === 'pt';
-  const toast = useToast();
   const isExpanded = expandedGroup === g.group.id;
   const allRecorded = g.matches.length === 3 && g.matches.every(m => m.is_recorded);
   const hasPlayers = g.players.length === 4;
   const pendingCount = g.matches.filter(m => !m.is_recorded).length;
-  const attendanceIssues = g.players.filter(player => player.attendance !== 'present');
-  const absentIssues = attendanceIssues.filter(player => player.attendance === 'absent');
-  const substituteIssues = attendanceIssues.filter(player => player.attendance === 'substitute');
-  const openAttendanceWhatsApp = () => {
-    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
-
-    const lines = [
-      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
-      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
-      '',
-      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
-      '',
-      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envía suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
-    ];
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
-  };
   const levelNum = g.court?.court_number || 0;
   const physicalNum = g.group.physical_court_number;
   const assignedInCurrentSlot = new Set(
@@ -843,123 +792,6 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
     present:    'bg-emerald-200 text-emerald-800',
     absent:     'bg-red-200 text-red-800',
     substitute: 'bg-amber-200 text-amber-800',
-  };
-  const copyAttendanceWhatsApp = async () => {
-    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
-
-    const lines = [
-      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
-      isPt ? `Horario: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
-      '',
-      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
-      '',
-      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envia suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
-    ];
-
-    const message = lines.join('\n');
-    let copied = false;
-    if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(message); copied = true; } catch {}
-    }
-    if (!copied) {
-      const ta = Object.assign(document.createElement('textarea'), { value: message, readOnly: true, style: 'position:fixed;left:-9999px' });
-      document.body.appendChild(ta);
-      ta.select();
-      copied = document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-
-    copied
-      ? toast.success(isPt ? 'Mensagem copiada.' : isEs ? 'Mensaje copiado.' : 'Message copied.')
-      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
-  };
-  const buildIssueMessage = (kind: 'absent' | 'substitute') => {
-    const players = kind === 'absent' ? absentIssues : substituteIssues;
-    if (players.length === 0) return null;
-
-    const title = kind === 'absent'
-      ? (isPt ? `Quadra nivel ${levelNum} - confirmar ausencias` : isEs ? `Cancha nivel ${levelNum} - confirmar ausencias` : `Level court ${levelNum} - confirm absences`)
-      : (isPt ? `Quadra nivel ${levelNum} - confirmar substitutas` : isEs ? `Cancha nivel ${levelNum} - confirmar suplentes` : `Level court ${levelNum} - confirm substitutes`);
-    const cta = kind === 'absent'
-      ? (isPt ? 'Por favor confirme presença ou indique substituta para estas jogadoras.' : isEs ? 'Por favor confirma asistencia o indica suplente para estas jugadoras.' : 'Please confirm attendance or provide a substitute for these players.')
-      : (isPt ? 'Por favor confirme as substitutas disponiveis para esta quadra.' : isEs ? 'Por favor confirma las suplentes disponibles para esta cancha.' : 'Please confirm the available substitutes for this court.');
-
-    return [
-      title,
-      isPt ? `Horario: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
-      '',
-      ...players.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}${player.substitute_name ? ` - ${player.substitute_name}` : ''}`),
-      '',
-      cta,
-    ].join('\n');
-  };
-  const copyIssueMessage = async (kind: 'absent' | 'substitute') => {
-    const message = buildIssueMessage(kind);
-    if (!message || typeof window === 'undefined') return;
-
-    let copied = false;
-    if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(message); copied = true; } catch {}
-    }
-    if (!copied) {
-      const ta = Object.assign(document.createElement('textarea'), { value: message, readOnly: true, style: 'position:fixed;left:-9999px' });
-      document.body.appendChild(ta);
-      ta.select();
-      copied = document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-
-    copied
-      ? toast.success(isPt ? 'Mensagem copiada.' : isEs ? 'Mensaje copiado.' : 'Message copied.')
-      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
-  };
-  const openIssueWhatsApp = (kind: 'absent' | 'substitute') => {
-    const message = buildIssueMessage(kind);
-    if (!message || typeof window === 'undefined') return;
-    const players = kind === 'absent' ? absentIssues : substituteIssues;
-    const directPhone = players.length === 1 ? toWhatsAppPhone(parsePlayerContact(players[0].playerData?.notes).phone) : null;
-    const target = directPhone
-      ? `https://wa.me/${directPhone}?text=${encodeURIComponent(message)}`
-      : `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(target, '_blank', 'noopener,noreferrer');
-  };
-  const remindPlayer = (playerEntry: RoundCourtPlayer & { playerData: Player }) => {
-    if (typeof window === 'undefined') return;
-
-    const contact = parsePlayerContact(playerEntry.playerData?.notes);
-    const phone = toWhatsAppPhone(contact.phone);
-    if (!phone) {
-      toast.warning(isPt ? 'Adicione um telefone para essa jogadora.' : isEs ? 'Agrega un telefono para esta jugadora.' : 'Add a phone number for this player.');
-      return;
-    }
-
-    const reminderTone = playerEntry.attendance === 'absent'
-      ? {
-          intro: isPt ? 'Preciso confirmar sua ausencia nesta rodada.' : isEs ? 'Necesito confirmar tu ausencia en esta jornada.' : 'I need to confirm your absence for this round.',
-          followUp: isPt ? 'Se conseguir jogar, me avisa. Se nao, me confirma para eu ajustar a escala.' : isEs ? 'Si puedes jugar, avisame. Si no, confirmamelo para ajustar la rotacion.' : 'If you can still play, let me know. Otherwise, please confirm so I can adjust the lineup.',
-          cta: isPt ? 'confirmar ausencia' : isEs ? 'confirmar ausencia' : 'confirm absence',
-        }
-      : playerEntry.attendance === 'substitute'
-        ? {
-            intro: isPt ? 'Quero alinhar sua entrada como substituta nesta rodada.' : isEs ? 'Quiero confirmar tu entrada como suplente en esta jornada.' : 'I want to confirm your substitute availability for this round.',
-            followUp: isPt ? 'Me avisa se consegue entrar nessa faixa de horario.' : isEs ? 'Avisame si puedes entrar en esta franja horaria.' : 'Let me know if you can join in this time slot.',
-            cta: isPt ? 'chamar substituta' : isEs ? 'llamar suplente' : 'call substitute',
-          }
-        : {
-            intro: isPt ? 'Lembrete rapido da sua rodada.' : isEs ? 'Recordatorio rapido de tu partido.' : 'Quick reminder for your match.',
-            followUp: isPt ? 'Me confirma sua presenca quando puder, por favor.' : isEs ? 'Confirma tu asistencia cuando puedas, por favor.' : 'Please confirm your attendance when you can.',
-            cta: isPt ? 'confirmar presenca' : isEs ? 'confirmar asistencia' : 'confirm attendance',
-          };
-
-    const message = [
-      isPt ? `Oi, ${playerEntry.playerData?.full_name || 'jogadora'}.` : isEs ? `Hola, ${playerEntry.playerData?.full_name || 'jugadora'}.` : `Hi, ${playerEntry.playerData?.full_name || 'player'}.`,
-      reminderTone.intro,
-      isPt ? `Faixa prevista: ${g.slot?.slot_time || '--:--'}.` : isEs ? `Franja prevista: ${g.slot?.slot_time || '--:--'}.` : `Planned slot: ${g.slot?.slot_time || '--:--'}.`,
-      isPt ? `Quadra nivel ${levelNum}.` : isEs ? `Cancha nivel ${levelNum}.` : `Level court ${levelNum}.`,
-      reminderTone.followUp,
-    ].join('\n');
-
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
   const attendanceLabel = (a: string) => {
     if (a === 'present')    return isPt ? '✓ Presente' : isEs ? '✓ Presente' : '✓ Present';
@@ -1281,3 +1113,5 @@ function StatusBadge({ status, locale }: { status: string; locale: string }) {
     </span>
   );
 }
+
+
