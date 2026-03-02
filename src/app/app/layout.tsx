@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { t } from '@/lib/i18n';
 import { BrandMark } from '@/components/BrandMark';
-import { Home, Users, Calendar, Settings, LogOut, Menu, X } from 'lucide-react';
+import { Home, Users, Calendar, Settings, LogOut, Menu, X, Trophy } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -49,6 +49,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     ? [
         { label: t('players', locale),  href: `/app/leagues/${leagueId}/players`,  icon: <Users size={20} /> },
         { label: t('rounds', locale),   href: `/app/leagues/${leagueId}/rounds`,   icon: <Calendar size={20} /> },
+        { label: t('ranking', locale),  href: `/app/leagues/${leagueId}/ranking`,  icon: <Trophy size={20} /> },
         { label: t('settings', locale), href: `/app/leagues/${leagueId}/settings`, icon: <Settings size={20} /> },
       ]
     : [];
@@ -75,6 +76,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         { label: t('dashboard', locale), href: '/app',                                  icon: <Home size={18} /> },
         { label: t('players', locale),   href: `/app/leagues/${leagueId}/players`,      icon: <Users size={18} /> },
         { label: t('rounds', locale),    href: `/app/leagues/${leagueId}/rounds`,       icon: <Calendar size={18} /> },
+        { label: t('ranking', locale),   href: `/app/leagues/${leagueId}/ranking`,      icon: <Trophy size={18} /> },
         { label: t('settings', locale),  href: `/app/leagues/${leagueId}/settings`,     icon: <Settings size={18} /> },
       ]
     : [
