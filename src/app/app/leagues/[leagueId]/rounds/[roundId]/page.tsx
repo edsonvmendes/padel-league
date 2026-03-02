@@ -39,63 +39,132 @@ export default function RoundDetailPage() {
   const [rules, setRules] = useState<Rules | null>(null);
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [closingRound, setClosingRound] = useState(false);
 
   useEffect(() => { if (user) loadAll(); }, [user, roundId]);
 
   const loadAll = async () => {
-    const [
-      { data: roundData },
-      { data: leagueData },
-      { data: slotsData },
-      { data: courtsData },
-      { data: groupsData },
-      { data: playersData },
-      { data: rulesData },
-    ] = await Promise.all([
-      run(() => db.from('rounds').select('*').eq('id', roundId).single()),
-      run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
-      run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
-      run(() => db.from('courts').select('*').eq('league_id', leagueId).order('court_number')),
-      run(() => db.from('round_court_groups').select('*').eq('round_id', roundId)),
-      run(() => db.from('players').select('*').eq('league_id', leagueId).eq('is_active', true).order('full_name')),
-      run(() => db.from('rules').select('*').or(`scope.eq.global,league_id.eq.${leagueId}`).order('scope', { ascending: false }).limit(1)),
-    ]);
-
-    setRound(roundData);
-    setLeague(leagueData);
-    setSlots(slotsData || []);
-    setAllPlayers(playersData || []);
-    setRules(rulesData?.[0] || null);
-
-    if (slotsData?.length && !activeSlot) setActiveSlot(slotsData[0].id);
-
-    if (groupsData) {
-      const gIds = groupsData.map((g: any) => g.id);
-      const [{ data: cpData }, { data: matchesData }] = await Promise.all([
-        gIds.length ? run(() => db.from('round_court_players').select('*').in('group_id', gIds)) : { data: [] },
-        gIds.length ? run(() => db.from('matches').select('*').in('group_id', gIds)) : { data: [] },
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [
+        roundRes,
+        leagueRes,
+        slotsRes,
+        courtsRes,
+        groupsRes,
+        playersRes,
+        rulesRes,
+      ] = await Promise.all([
+        run(() => db.from('rounds').select('*').eq('id', roundId).single()),
+        run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
+        run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
+        run(() => db.from('courts').select('*').eq('league_id', leagueId).order('court_number')),
+        run(() => db.from('round_court_groups').select('*').eq('round_id', roundId)),
+        run(() => db.from('players').select('*').eq('league_id', leagueId).eq('is_active', true).order('full_name')),
+        run(() => db.from('rules').select('*').or(`scope.eq.global,league_id.eq.${leagueId}`).order('scope', { ascending: false }).limit(1)),
       ]);
 
-      const enriched: GroupWithDetails[] = groupsData.map((g: any) => ({
-        group: g,
-        court: courtsData?.find((c: Court) => c.id === g.court_id)!,
-        slot: slotsData?.find((s: LeagueTimeSlot) => s.id === g.time_slot_id)!,
-        players: ((cpData || []) as any[]).filter(cp => cp.group_id === g.id).map(cp => ({
-          ...cp,
-          playerData: playersData?.find((p: Player) => p.id === cp.player_id) || {} as Player,
-        })),
-        matches: ((matchesData || []) as Match[]).filter(m => m.group_id === g.id).sort((a, b) => a.match_number - b.match_number),
-      }));
+      if (roundRes.error) throw new Error(`rounds: ${roundRes.error.message || 'unknown error'}`);
+      if (leagueRes.error) throw new Error(`leagues: ${leagueRes.error.message || 'unknown error'}`);
+      if (slotsRes.error) throw new Error(`league_time_slots: ${slotsRes.error.message || 'unknown error'}`);
+      if (courtsRes.error) throw new Error(`courts: ${courtsRes.error.message || 'unknown error'}`);
+      if (groupsRes.error) throw new Error(`round_court_groups: ${groupsRes.error.message || 'unknown error'}`);
+      if (playersRes.error) throw new Error(`players: ${playersRes.error.message || 'unknown error'}`);
+      if (rulesRes.error) throw new Error(`rules: ${rulesRes.error.message || 'unknown error'}`);
 
-      setGroups(enriched.sort((a, b) => {
-        const sd = (a.slot?.sort_order || 0) - (b.slot?.sort_order || 0);
-        return sd !== 0 ? sd : (a.court?.court_number || 0) - (b.court?.court_number || 0);
-      }));
+      const roundData = roundRes.data;
+      const leagueData = leagueRes.data;
+      const slotsData = slotsRes.data || [];
+      const courtsData = courtsRes.data || [];
+      const playersData = playersRes.data || [];
+      const rulesData = rulesRes.data || [];
+
+      setRound(roundData);
+      setLeague(leagueData);
+      setSlots(slotsData);
+      setAllPlayers(playersData);
+      setRules(rulesData[0] || null);
+
+      if (slotsData.length) {
+        setActiveSlot(current => current ?? slotsData[0].id);
+      }
+
+      let resolvedGroups = groupsRes.data || [];
+
+      if (roundData && leagueData && slotsData.length > 0 && courtsData.length > 0) {
+        const expectedGroups = slotsData.flatMap((slot: LeagueTimeSlot) =>
+          courtsData.map((court: Court) => ({
+            round_id: roundData.id,
+            league_id: leagueData.id,
+            time_slot_id: slot.id,
+            court_id: court.id,
+            is_cancelled: false,
+          }))
+        );
+
+        if (expectedGroups.length > 0) {
+          const syncRes = await run(() =>
+            db.from('round_court_groups').upsert(expectedGroups, {
+              onConflict: 'round_id,time_slot_id,court_id',
+            })
+          );
+
+          if (syncRes.error) {
+            throw new Error(`round_court_groups sync: ${syncRes.error.message || 'unknown error'}`);
+          }
+
+          const reloadedGroupsRes = await run(() =>
+            db.from('round_court_groups').select('*').eq('round_id', roundId)
+          );
+
+          if (reloadedGroupsRes.error) {
+            throw new Error(`round_court_groups reload: ${reloadedGroupsRes.error.message || 'unknown error'}`);
+          }
+
+          resolvedGroups = reloadedGroupsRes.data || [];
+        }
+      }
+
+      if (resolvedGroups.length > 0) {
+        const gIds = resolvedGroups.map((g: any) => g.id);
+        const [cpRes, matchesRes] = await Promise.all([
+          gIds.length ? run(() => db.from('round_court_players').select('*').in('group_id', gIds)) : Promise.resolve({ data: [], error: null }),
+          gIds.length ? run(() => db.from('matches').select('*').in('group_id', gIds)) : Promise.resolve({ data: [], error: null }),
+        ]);
+
+        if (cpRes.error) throw new Error(`round_court_players: ${cpRes.error.message || 'unknown error'}`);
+        if (matchesRes.error) throw new Error(`matches: ${matchesRes.error.message || 'unknown error'}`);
+
+        const cpData = cpRes.data || [];
+        const matchesData = matchesRes.data || [];
+
+        const enriched: GroupWithDetails[] = resolvedGroups.map((g: any) => ({
+          group: g,
+          court: courtsData.find((c: Court) => c.id === g.court_id) as Court,
+          slot: slotsData.find((s: LeagueTimeSlot) => s.id === g.time_slot_id) as LeagueTimeSlot,
+          players: (cpData as any[]).filter(cp => cp.group_id === g.id).map(cp => ({
+            ...cp,
+            playerData: playersData.find((p: Player) => p.id === cp.player_id) || ({} as Player),
+          })),
+          matches: (matchesData as Match[]).filter(m => m.group_id === g.id).sort((a, b) => a.match_number - b.match_number),
+        }));
+
+        setGroups(enriched.sort((a, b) => {
+          const sd = (a.slot?.sort_order || 0) - (b.slot?.sort_order || 0);
+          return sd !== 0 ? sd : (a.court?.court_number || 0) - (b.court?.court_number || 0);
+        }));
+      } else {
+        setGroups([]);
+      }
+    } catch (error: any) {
+      setGroups([]);
+      setLoadError(error?.message || 'Unexpected error loading round');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   // ── Ações de jogadoras ──────────────────────────────────────
@@ -228,13 +297,42 @@ export default function RoundDetailPage() {
       {[1,2].map(i => <div key={i} className="card p-4"><div className="h-4 bg-neutral-200 rounded w-1/4 mb-3" /><div className="grid grid-cols-4 gap-2">{[1,2,3,4].map(j => <div key={j} className="h-20 bg-neutral-100 rounded-xl" />)}</div></div>)}
     </div>
   );
-  if (!round) return <div className="text-center py-12 text-red-400">{t('error', locale)}</div>;
+  if (!round) {
+    if (loadError) {
+      return (
+        <div className="max-w-2xl mx-auto py-10">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="font-semibold">Round load error</div>
+            <div className="mt-1 break-words">{loadError}</div>
+            <button
+              onClick={loadAll}
+              className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+              Retry
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return <div className="text-center py-12 text-red-400">{t('error', locale)}</div>;
+  }
 
   const isClosed = round.status === 'closed';
   const physicalCourtsCount = league?.physical_courts_count || 6;
 
   return (
     <div className="space-y-5">
+      {loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="font-semibold">Round load error</div>
+          <div className="mt-1 break-words">{loadError}</div>
+          <button
+            onClick={loadAll}
+            className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Header card */}
       <div className="card p-5">
         <div className="flex items-start justify-between gap-3">
@@ -297,7 +395,32 @@ export default function RoundDetailPage() {
       </div>
 
       {/* Court cards */}
-      {filteredGroups.length === 0 ? (
+      {slots.length === 0 ? (
+        <div className="card p-10 text-center text-neutral-500 space-y-3">
+          <p className="font-semibold">
+            {isPt ? 'Faltam horarios na liga' : isEs ? 'Faltan horarios en la liga' : 'This league has no time slots'}
+          </p>
+          <button
+            onClick={() => router.push(`/app/leagues/${leagueId}/settings`)}
+            className="btn-primary inline-flex items-center gap-2">
+            {isPt ? 'Configurar liga' : isEs ? 'Configurar liga' : 'Configure league'}
+          </button>
+        </div>
+      ) : groups.length === 0 ? (
+        <div className="card p-10 text-center text-neutral-500 space-y-3">
+          <p className="font-semibold">
+            {isPt ? 'Esta rodada ainda nao tem grupos' : isEs ? 'Esta jornada todavia no tiene grupos' : 'This round has no groups yet'}
+          </p>
+          <p className="text-sm text-neutral-400">
+            {isPt ? 'Configure quadras da liga e recarregue a rodada.' : isEs ? 'Configura las canchas de la liga y vuelve a cargar la jornada.' : 'Configure league courts and reload this round.'}
+          </p>
+          <button
+            onClick={() => router.push(`/app/leagues/${leagueId}/settings`)}
+            className="btn-primary inline-flex items-center gap-2">
+            {isPt ? 'Abrir configuracoes' : isEs ? 'Abrir configuracion' : 'Open settings'}
+          </button>
+        </div>
+      ) : filteredGroups.length === 0 ? (
         <div className="card p-10 text-center text-neutral-400">
           {isPt ? 'Nenhuma quadra neste horário' : isEs ? 'No hay canchas en este horario' : 'No courts in this time slot'}
         </div>

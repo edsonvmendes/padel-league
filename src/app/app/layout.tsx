@@ -29,8 +29,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loading && !user) {
       router.replace('/login');
-    } else if (!loading && profile && !profile.onboarding_ack) {
-      router.replace('/onboarding');
     }
   }, [user, profile, loading, router]);
 

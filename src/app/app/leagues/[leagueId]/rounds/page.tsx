@@ -84,6 +84,18 @@ export default function RoundsPage() {
   const groupCount = selectedSlots.size * selectedCourts.size;
 
   const createRound = async () => {
+    if (slots.length === 0 || courts.length === 0) {
+      toast.warning(
+        isPt
+          ? 'Configure horarios e quadras antes de criar a rodada'
+          : isEs
+          ? 'Configura horarios y canchas antes de crear la jornada'
+          : 'Configure time slots and courts before creating a round'
+      );
+      router.push(`/app/leagues/${leagueId}/settings`);
+      return;
+    }
+
     if (!modalDate) {
       toast.warning(isPt ? 'Selecione uma data' : isEs ? 'Selecciona una fecha' : 'Select a date');
       return;
@@ -111,6 +123,7 @@ export default function RoundsPage() {
       const activeCourts = courts.filter(c => selectedCourts.has(c.id));
       const groups = activeSlots.flatMap(s => activeCourts.map(c => ({
         round_id: round.id,
+        league_id: leagueId,
         time_slot_id: s.id,
         court_id: c.id,
         is_cancelled: false,
