@@ -1,0 +1,55 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#071519" />
+  <rect width="1200" height="630" fill="url(#bgGlow)" />
+  <circle cx="1048" cy="118" r="188" fill="#0C9B8A" fill-opacity="0.16" />
+  <circle cx="164" cy="512" r="240" fill="#D4A34A" fill-opacity="0.14" />
+  <rect x="78" y="74" width="1044" height="482" rx="34" fill="url(#panel)" stroke="#FFFFFF" stroke-opacity="0.08" />
+
+  <rect x="130" y="128" width="110" height="110" rx="30" fill="url(#logoBg)" />
+  <rect x="139" y="137" width="92" height="92" rx="24" stroke="url(#logoFrame)" stroke-opacity="0.65" />
+  <path d="M172 156V210" stroke="white" stroke-width="10" stroke-linecap="round" />
+  <path d="M172 156H192C206.359 156 218 167.641 218 182C218 196.359 206.359 208 192 208H172" stroke="white" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="208" cy="167" r="7" fill="url(#ball)" />
+
+  <text x="274" y="164" fill="#DCE8E4" font-family="Trebuchet MS, Avenir Next, Segoe UI, sans-serif" font-size="26" font-weight="700" letter-spacing="6">CLUB EDITION</text>
+  <text x="126" y="304" fill="#FFFFFF" font-family="Trebuchet MS, Avenir Next, Segoe UI, sans-serif" font-size="96" font-weight="700">Padel League</text>
+  <text x="126" y="376" fill="#BED1CB" font-family="Avenir Next, Segoe UI, sans-serif" font-size="34" font-weight="500">Organize rodadas, ranking e presencas com um visual</text>
+  <text x="126" y="424" fill="#BED1CB" font-family="Avenir Next, Segoe UI, sans-serif" font-size="34" font-weight="500">mais humano e uma operacao mais clara.</text>
+
+  <rect x="126" y="470" width="290" height="54" rx="27" fill="#0C9B8A" />
+  <text x="156" y="505" fill="#FFFFFF" font-family="Trebuchet MS, Avenir Next, Segoe UI, sans-serif" font-size="24" font-weight="700" letter-spacing="1.8">FRIENDLY CLUB OPS</text>
+
+  <rect x="760" y="176" width="252" height="280" rx="28" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.08" />
+  <text x="798" y="222" fill="#9FBBB3" font-family="Trebuchet MS, Avenir Next, Segoe UI, sans-serif" font-size="18" font-weight="700" letter-spacing="2.4">LIVE SNAPSHOT</text>
+  <text x="798" y="290" fill="#FFFFFF" font-family="Trebuchet MS, Avenir Next, Segoe UI, sans-serif" font-size="76" font-weight="700">12</text>
+  <text x="798" y="326" fill="#B9C9C4" font-family="Avenir Next, Segoe UI, sans-serif" font-size="24" font-weight="600">rodadas em andamento</text>
+  <rect x="798" y="364" width="176" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.08" />
+  <rect x="798" y="364" width="132" height="14" rx="7" fill="#0C9B8A" />
+  <rect x="798" y="406" width="152" height="14" rx="7" fill="#FFFFFF" fill-opacity="0.08" />
+  <rect x="798" y="406" width="96" height="14" rx="7" fill="#D4A34A" />
+  <text x="798" y="454" fill="#DCE8E4" font-family="Avenir Next, Segoe UI, sans-serif" font-size="22" font-weight="600">ranking, jogadores e presenca</text>
+
+  <defs>
+    <linearGradient id="bgGlow" x1="114" y1="78" x2="1078" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0A1E22" />
+      <stop offset="1" stop-color="#071519" />
+    </linearGradient>
+    <linearGradient id="panel" x1="112" y1="96" x2="1062" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E2225" stop-opacity="0.92" />
+      <stop offset="1" stop-color="#081619" stop-opacity="0.96" />
+    </linearGradient>
+    <linearGradient id="logoBg" x1="146" y1="132" x2="224" y2="226" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F766E" />
+      <stop offset="0.55" stop-color="#0B5F59" />
+      <stop offset="1" stop-color="#083B39" />
+    </linearGradient>
+    <linearGradient id="logoFrame" x1="150" y1="140" x2="220" y2="220" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" />
+      <stop offset="1" stop-color="white" stop-opacity="0.2" />
+    </linearGradient>
+    <linearGradient id="ball" x1="202" y1="161" x2="214" y2="173" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7D6" />
+      <stop offset="1" stop-color="#F4D06F" />
+    </linearGradient>
+  </defs>
+</svg>

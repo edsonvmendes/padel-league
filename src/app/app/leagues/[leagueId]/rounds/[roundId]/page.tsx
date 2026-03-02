@@ -45,8 +45,7 @@ export default function RoundDetailPage() {
   const [closingRound, setClosingRound] = useState(false);
   const isMutating = startingRound || closingRound;
 
-  const getActionErrorMessage = (error: any, fallback: string) =>
-    error?.message || fallback;
+  const getActionErrorMessage = (_error: any, fallback: string) => fallback;
 
   useEffect(() => { if (user) loadAll(); }, [user, roundId]);
 
@@ -127,9 +126,15 @@ export default function RoundDetailPage() {
       } else {
         setGroups([]);
       }
-    } catch (error: any) {
+    } catch (_error: any) {
       setGroups([]);
-      setLoadError(error?.message || 'Unexpected error loading round');
+      setLoadError(
+        isPt
+          ? 'Não foi possível carregar esta rodada agora.'
+          : isEs
+            ? 'No fue posible cargar esta jornada ahora.'
+            : 'Unable to load this round right now.'
+      );
     } finally {
       setLoading(false);
     }
@@ -154,7 +159,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel atualizar as jogadoras da quadra.' : isEs ? 'No se pudo actualizar las jugadoras de la cancha.' : 'Could not update court players.'
+        isPt ? 'Não foi possível atualizar as jogadoras da quadra.' : isEs ? 'No se pudo actualizar las jugadoras de la cancha.' : 'Could not update court players.'
       ));
     }
   };
@@ -168,7 +173,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel remover a jogadora.' : isEs ? 'No se pudo quitar la jugadora.' : 'Could not remove the player.'
+        isPt ? 'Não foi possível remover a jogadora.' : isEs ? 'No se pudo quitar la jugadora.' : 'Could not remove the player.'
       ));
     }
   };
@@ -183,7 +188,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel atualizar a presenca.' : isEs ? 'No se pudo actualizar la asistencia.' : 'Could not update attendance.'
+        isPt ? 'Não foi possível atualizar a presença.' : isEs ? 'No se pudo actualizar la asistencia.' : 'Could not update attendance.'
       ));
     }
   };
@@ -198,7 +203,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel salvar o placar.' : isEs ? 'No se pudo guardar el marcador.' : 'Could not save the score.'
+        isPt ? 'Não foi possível salvar o placar.' : isEs ? 'No se pudo guardar el marcador.' : 'Could not save the score.'
       ));
     }
   };
@@ -212,7 +217,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel atualizar a quadra fisica.' : isEs ? 'No se pudo actualizar la cancha fisica.' : 'Could not update the physical court.'
+        isPt ? 'Não foi possível atualizar a quadra física.' : isEs ? 'No se pudo actualizar la cancha asignada.' : 'Could not update the physical court.'
       ));
     }
   };
@@ -226,7 +231,7 @@ export default function RoundDetailPage() {
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel atualizar o horario do jogo.' : isEs ? 'No se pudo actualizar el horario del juego.' : 'Could not update the match time.'
+        isPt ? 'Não foi possível atualizar o horário do jogo.' : isEs ? 'No se pudo actualizar el horario del juego.' : 'Could not update the match time.'
       ));
     }
   };
@@ -238,12 +243,12 @@ export default function RoundDetailPage() {
     setStartingRound(true);
     try {
       await runOrThrow(() => db.from('rounds').update({ status: 'running' }).eq('id', roundId));
-      toast.success(isPt ? 'Rodada iniciada!' : isEs ? '¡Jornada iniciada!' : 'Round started!');
+      toast.success(isPt ? 'Rodada iniciada.' : isEs ? 'Jornada iniciada.' : 'Round started.');
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel iniciar a rodada.' : isEs ? 'No se pudo iniciar la jornada.' : 'Could not start the round.'
+        isPt ? 'Não foi possível iniciar a rodada.' : isEs ? 'No se pudo iniciar la jornada.' : 'Could not start the round.'
       ));
     } finally {
       setStartingRound(false);
@@ -269,12 +274,12 @@ export default function RoundDetailPage() {
         () => db.rpc('close_round', { p_round_id: roundId }),
         isPt ? 'Erro ao fechar rodada' : isEs ? 'Error al cerrar jornada' : 'Failed to close round'
       );
-      toast.success(isPt ? 'Rodada fechada! Ranking atualizado.' : isEs ? '¡Jornada cerrada! Ranking actualizado.' : 'Round closed! Ranking updated.');
+      toast.success(isPt ? 'Rodada fechada. Ranking atualizado.' : isEs ? 'Jornada cerrada. Ranking actualizado.' : 'Round closed. Ranking updated.');
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(
         error,
-        isPt ? 'Nao foi possivel fechar a rodada.' : isEs ? 'No se pudo cerrar la jornada.' : 'Could not close the round.'
+        isPt ? 'Não foi possível fechar a rodada.' : isEs ? 'No se pudo cerrar la jornada.' : 'Could not close the round.'
       ));
     } finally {
       setClosingRound(false);
@@ -305,8 +310,8 @@ export default function RoundDetailPage() {
       ok = document.execCommand('copy'); document.body.removeChild(ta);
     }
     ok
-      ? toast.success(isPt ? 'Copiado!' : isEs ? '¡Copiado!' : 'Copied!')
-      : toast.error(isPt ? 'Não foi possível copiar' : isEs ? 'No se pudo copiar' : 'Could not copy');
+      ? toast.success(isPt ? 'Copiado.' : isEs ? 'Copiado.' : 'Copied.')
+      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
   };
 
   // ── Render ──────────────────────────────────────────────────
@@ -314,7 +319,7 @@ export default function RoundDetailPage() {
 
   if (loading) return (
     <div className="space-y-4 animate-pulse">
-      <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)]">
+      <div className="rounded-[2rem] border border-white/70 bg-white/85 p-4 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] sm:p-6">
         <div className="mb-3 h-7 w-1/3 rounded-full bg-neutral-200" />
         <div className="h-4 w-1/2 rounded-full bg-neutral-100" />
       </div>
@@ -333,12 +338,12 @@ export default function RoundDetailPage() {
       return (
         <div className="max-w-2xl mx-auto py-10">
           <div className="rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 shadow-[0_18px_34px_-30px_rgba(220,38,38,0.25)]">
-            <div className="font-semibold">Round load error</div>
+            <div className="font-semibold">{isPt ? 'Erro ao carregar rodada' : isEs ? 'Error al cargar jornada' : 'Round loading error'}</div>
             <div className="mt-1 break-words">{loadError}</div>
             <button
               onClick={loadAll}
               className="mt-3 rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700">
-              Retry
+              {isPt ? 'Tentar de novo' : isEs ? 'Intentar otra vez' : 'Try again'}
             </button>
           </div>
         </div>
@@ -354,12 +359,12 @@ export default function RoundDetailPage() {
     <div className="space-y-5">
       {loadError && (
         <div className="rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 shadow-[0_18px_34px_-30px_rgba(220,38,38,0.25)]">
-          <div className="font-semibold">Round load error</div>
+          <div className="font-semibold">{isPt ? 'Erro ao carregar rodada' : isEs ? 'Error al cargar jornada' : 'Round loading error'}</div>
           <div className="mt-1 break-words">{loadError}</div>
           <button
             onClick={loadAll}
             className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
-            Retry
+            {isPt ? 'Tentar de novo' : isEs ? 'Intentar otra vez' : 'Try again'}
           </button>
         </div>
       )}
@@ -367,16 +372,16 @@ export default function RoundDetailPage() {
       {actionError && (
         <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 shadow-[0_18px_34px_-30px_rgba(180,83,9,0.22)]">
           <div className="font-semibold">
-            {isPt ? 'Falha na operacao' : isEs ? 'Fallo en la operacion' : 'Operation failed'}
+            {isPt ? 'Falha na operação' : isEs ? 'Fallo en la operación' : 'Action failed'}
           </div>
           <div className="mt-1 break-words">{actionError}</div>
         </div>
       )}
 
       {/* Header card */}
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)] sm:p-6">
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
-        <div className="relative flex items-start justify-between gap-3">
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3 min-w-0">
             <button onClick={() => router.push(`/app/leagues/${leagueId}/rounds`)}
               className="mt-0.5 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/80 text-neutral-500 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.28)] transition hover:text-neutral-800">
@@ -386,7 +391,7 @@ export default function RoundDetailPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
                 {isPt ? 'Centro da rodada' : isEs ? 'Centro de jornada' : 'Round control'}
               </p>
-              <h1 className="mt-1 text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
+              <h1 className="mt-1 text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
                 {isPt ? `Rodada ${round.number}` : isEs ? `Jornada ${round.number}` : `Round ${round.number}`}
               </h1>
               <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-500">
@@ -399,9 +404,9 @@ export default function RoundDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="mt-5 flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {round.status === 'draft' && (
-            <button onClick={startRound} disabled={isMutating} className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-60">
+            <button onClick={startRound} disabled={isMutating} className="btn-primary inline-flex w-full items-center justify-center gap-1.5 disabled:opacity-60 sm:w-auto">
               {startingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Iniciando...' : isEs ? 'Iniciando...' : 'Starting...'}</>
                 : <><PlayCircle size={16} />{isPt ? 'Iniciar' : isEs ? 'Iniciar jornada' : 'Start round'}</>}
@@ -409,14 +414,14 @@ export default function RoundDetailPage() {
           )}
           {round.status === 'running' && (
             <button onClick={closeRound} disabled={isMutating}
-              className="inline-flex items-center gap-1.5 rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(15,23,42,0.45)] transition hover:bg-neutral-700 disabled:opacity-60">
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(15,23,42,0.45)] transition hover:bg-neutral-700 disabled:opacity-60 sm:w-auto">
               {closingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Fechando...' : isEs ? 'Cerrando...' : 'Closing...'}</>
                 : <><Lock size={16} />{isPt ? 'Fechar rodada' : isEs ? 'Cerrar jornada' : 'Close round'}</>}
             </button>
           )}
           <button onClick={copyWhatsApp} disabled={isMutating}
-            className="inline-flex items-center gap-1.5 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(37,211,102,0.45)] transition hover:bg-[#1ebe59] disabled:opacity-60">
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(37,211,102,0.45)] transition hover:bg-[#1ebe59] disabled:opacity-60 sm:w-auto">
             <MessageCircle size={16} />
             WhatsApp
           </button>
@@ -425,9 +430,9 @@ export default function RoundDetailPage() {
         {slots.length > 0 && (
           <div className="mt-5 rounded-[1.4rem] bg-neutral-900/5 px-4 py-3 text-sm text-neutral-600">
             {isPt
-              ? 'Horario e quadra fisica podem ser definidos em cada jogo.'
+              ? 'Horário e quadra física podem ser ajustados em cada jogo.'
               : isEs
-                ? 'Horario y cancha fisica pueden definirse en cada juego.'
+                ? 'Horario y cancha asignada se pueden ajustar en cada juego.'
                 : 'Time slot and physical court can be set per game.'}
           </div>
         )}
@@ -435,28 +440,28 @@ export default function RoundDetailPage() {
 
       {/* Court cards */}
       {slots.length === 0 ? (
-        <div className="card p-10 text-center text-neutral-500 space-y-3">
+        <div className="card space-y-3 p-8 text-center text-neutral-500 sm:p-10">
           <p className="font-semibold">
-            {isPt ? 'Faltam horarios na liga' : isEs ? 'Faltan horarios en la liga' : 'This league has no time slots'}
+            {isPt ? 'Faltam horários na liga' : isEs ? 'Faltan horarios en la liga' : 'This league has no time slots'}
           </p>
           <button
             onClick={() => router.push(`/app/leagues/${leagueId}/settings`)}
-            className="btn-primary inline-flex items-center gap-2">
+            className="btn-primary inline-flex w-full items-center justify-center gap-2 sm:w-auto">
             {isPt ? 'Configurar liga' : isEs ? 'Configurar liga' : 'Configure league'}
           </button>
         </div>
       ) : groups.length === 0 ? (
-        <div className="card p-10 text-center text-neutral-500 space-y-3">
+        <div className="card space-y-3 p-8 text-center text-neutral-500 sm:p-10">
           <p className="font-semibold">
-            {isPt ? 'Esta rodada ainda nao tem grupos' : isEs ? 'Esta jornada todavia no tiene grupos' : 'This round has no groups yet'}
+            {isPt ? 'Esta rodada ainda não tem grupos' : isEs ? 'Esta jornada aún no tiene grupos' : 'This round has no groups yet'}
           </p>
           <p className="text-sm text-neutral-400">
-            {isPt ? 'Configure horarios e quadras antes de criar a proxima rodada.' : isEs ? 'Configura horarios y canchas antes de crear la proxima jornada.' : 'Configure time slots and courts before creating the next round.'}
+            {isPt ? 'Configure horários e quadras antes de abrir a próxima rodada.' : isEs ? 'Configura horarios y canchas antes de abrir la próxima jornada.' : 'Configure time slots and courts before opening the next round.'}
           </p>
           <button
             onClick={() => router.push(`/app/leagues/${leagueId}/settings`)}
-            className="btn-primary inline-flex items-center gap-2">
-            {isPt ? 'Abrir configuracoes' : isEs ? 'Abrir configuracion' : 'Open settings'}
+            className="btn-primary inline-flex w-full items-center justify-center gap-2 sm:w-auto">
+            {isPt ? 'Abrir configurações' : isEs ? 'Abrir configuración' : 'Open settings'}
           </button>
         </div>
       ) : filteredGroups.length === 0 ? (
@@ -538,8 +543,8 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
   return (
     <div className={`overflow-hidden rounded-[1.8rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] ${g.group.is_cancelled ? 'opacity-40' : ''}`}>
       {/* Header */}
-      <div className="border-b border-neutral-100 bg-gradient-to-r from-neutral-50 to-white p-5">
-        <div className="flex items-center justify-between">
+      <div className="border-b border-neutral-100 bg-gradient-to-r from-neutral-50 to-white p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className={`flex h-12 w-12 flex-col items-center justify-center rounded-2xl font-bold shadow-[0_18px_34px_-24px_rgba(15,23,42,0.28)] ${
               allRecorded ? 'bg-emerald-500 text-white' : hasPlayers ? 'bg-teal-500 text-white' : 'bg-neutral-900/8 text-neutral-500'
@@ -583,7 +588,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
               </div>
             </div>
           </div>
-          <div>
+          <div className="self-start sm:self-auto">
             {allRecorded
               ? <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">✓ {isPt ? 'Ok' : isEs ? 'Ok' : 'Ok'}</span>
               : hasPlayers && pendingCount > 0
@@ -690,7 +695,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                   <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
                     {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {Array.from(calculateGroupPoints(g.matches, g.players, rules).entries())
                       .sort((a, b) => b[1] - a[1])
                       .map(([pid, pts], idx, arr) => {
@@ -709,7 +714,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                         );
                       })}
                   </div>
-                  <p className="text-[10px] text-neutral-400 mt-1.5">▲ {isPt ? 'Sobe' : isEs ? 'Sube' : 'Up'} · ▼ {isPt ? 'Desce' : isEs ? 'Baja' : 'Down'}</p>
+                  <p className="text-[10px] text-neutral-400 mt-1.5">▲ {isPt ? 'Sobe' : isEs ? 'Sube' : 'Up'} - ▼ {isPt ? 'Desce' : isEs ? 'Baja' : 'Down'}</p>
                 </div>
               )}
             </div>
@@ -749,14 +754,14 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
       <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-neutral-400">
         {isPt ? `Partida ${match.match_number}` : isEs ? `Partido ${match.match_number}` : `Match ${match.match_number}`}
       </p>
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2.5">
         {/* Team 1 */}
-        <div className="flex-1 text-right space-y-0.5">
+        <div className="w-full flex-1 space-y-0.5 sm:text-right">
           <p className="text-xs font-semibold text-neutral-700 leading-tight truncate">{team1[0]}</p>
           <p className="text-xs font-semibold text-neutral-700 leading-tight truncate">{team1[1]}</p>
         </div>
         {/* Scores */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+        <div className="flex flex-shrink-0 items-center justify-center gap-1.5">
           <input type="number" inputMode="numeric" min="0" max="7"
             value={s1} onChange={e => setS1(e.target.value)} disabled={disabled}
             className={`h-14 w-14 rounded-2xl border-2 text-center text-2xl font-extrabold transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
@@ -770,14 +775,14 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
             } disabled:opacity-60`} />
         </div>
         {/* Team 2 */}
-        <div className="flex-1 space-y-0.5">
+        <div className="w-full flex-1 space-y-0.5">
           <p className="text-xs font-semibold text-neutral-700 leading-tight truncate">{team2[0]}</p>
           <p className="text-xs font-semibold text-neutral-700 leading-tight truncate">{team2[1]}</p>
         </div>
         {/* Save btn */}
         {!disabled && s1 !== '' && s2 !== '' && (
           <button onClick={handleSave}
-            className={`flex-shrink-0 rounded-2xl p-3 transition ${recorded ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300' : 'bg-teal-600 text-white shadow-[0_14px_28px_-20px_rgba(13,148,136,0.45)] hover:bg-teal-700'}`}>
+            className={`flex w-full flex-shrink-0 items-center justify-center rounded-2xl p-3 transition sm:w-auto ${recorded ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300' : 'bg-teal-600 text-white shadow-[0_14px_28px_-20px_rgba(13,148,136,0.45)] hover:bg-teal-700'}`}>
             <Check size={18} />
           </button>
         )}

@@ -13,6 +13,8 @@ interface DashboardStats {
   totalPlayers: number;
   totalRounds: number;
   roundsInProgress: number;
+  completionRate: number;
+  averagePlayersPerLeague: number;
 }
 
 interface RecentLeague extends League {
@@ -28,7 +30,14 @@ export default function AppDashboard() {
   const isEs = locale === 'es';
   const isPt = locale === 'pt';
 
-  const [stats, setStats] = useState<DashboardStats>({ totalLeagues: 0, totalPlayers: 0, totalRounds: 0, roundsInProgress: 0 });
+  const [stats, setStats] = useState<DashboardStats>({
+    totalLeagues: 0,
+    totalPlayers: 0,
+    totalRounds: 0,
+    roundsInProgress: 0,
+    completionRate: 0,
+    averagePlayersPerLeague: 0,
+  });
   const [leagues, setLeagues] = useState<RecentLeague[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -52,6 +61,10 @@ export default function AppDashboard() {
       totalPlayers: pl.length,
       totalRounds: rd.length,
       roundsInProgress: rd.filter((r: Round) => r.status === 'running').length,
+      completionRate: lg.length > 0
+        ? Math.round((rd.filter((r: Round) => r.status === 'closed').length / Math.max(lg.reduce((sum: number, league: League) => sum + Math.max(league.rounds_count, 0), 0), 1)) * 100)
+        : 0,
+      averagePlayersPerLeague: lg.length > 0 ? Number((pl.length / lg.length).toFixed(1)) : 0,
     });
 
     const enriched: RecentLeague[] = lg.map((league: League) => {
@@ -71,29 +84,30 @@ export default function AppDashboard() {
 
   const greeting = () => {
     const hour = new Date().getHours();
-    const name = profile?.full_name?.split(' ')[0] || '';
+    const firstName = profile?.full_name?.trim().split(/\s+/)[0] || '';
+    const suffix = firstName ? `, ${firstName}!` : '!';
 
     if (isPt) {
-      if (hour < 12) return `Bom dia, ${name}!`;
-      if (hour < 18) return `Boa tarde, ${name}!`;
-      return `Boa noite, ${name}!`;
+      if (hour < 12) return `Bom dia${suffix}`;
+      if (hour < 18) return `Boa tarde${suffix}`;
+      return `Boa noite${suffix}`;
     }
 
     if (isEs) {
-      if (hour < 12) return `Buenos dias, ${name}!`;
-      if (hour < 18) return `Buenas tardes, ${name}!`;
-      return `Buenas noches, ${name}!`;
+      if (hour < 12) return `Buenos días${suffix}`;
+      if (hour < 18) return `Buenas tardes${suffix}`;
+      return `Buenas noches${suffix}`;
     }
 
-    if (hour < 12) return `Good morning, ${name}!`;
-    if (hour < 18) return `Good afternoon, ${name}!`;
-    return `Good evening, ${name}!`;
+    if (hour < 12) return `Good morning${suffix}`;
+    if (hour < 18) return `Good afternoon${suffix}`;
+    return `Good evening${suffix}`;
   };
 
   const summaryText = isPt
-    ? 'Visao imediata do que esta rodando, quantas atletas estao ativas e onde sua operacao precisa de atencao hoje.'
+    ? 'Visão imediata do que está rodando, quantas atletas estão ativas e onde sua operação precisa de atenção hoje.'
     : isEs
-      ? 'Visibilidad inmediata de lo que esta en marcha, cuantas jugadoras estan activas y donde tu operacion necesita atencion hoy.'
+      ? 'Visibilidad inmediata de lo que está en marcha, cuántas jugadoras están activas y dónde tu operación necesita atención hoy.'
       : 'Immediate visibility into what is live, how many players are active, and where your operation needs attention today.';
 
   const statusLabel = (round: Round) => {
@@ -110,7 +124,7 @@ export default function AppDashboard() {
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(13,148,136,0.18),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(247,250,252,0.96))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.45)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(13,148,136,0.18),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(247,250,252,0.96))] p-4 sm:p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.45)]">
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl space-y-3">
@@ -118,12 +132,12 @@ export default function AppDashboard() {
               {isPt ? 'Painel central' : isEs ? 'Panel central' : 'Control room'}
             </span>
             <div>
-              <h1 className="text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{greeting()}</h1>
+              <h1 className="text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{greeting()}</h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-600 sm:text-[15px]">{summaryText}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:min-w-[320px]">
+          <div className="grid w-full grid-cols-1 gap-3 sm:min-w-[320px] sm:grid-cols-2 lg:w-auto">
             <SpotlightMetric
               label={isPt ? 'Ligas ativas' : isEs ? 'Ligas activas' : 'Active leagues'}
               value={stats.totalLeagues}
@@ -135,7 +149,7 @@ export default function AppDashboard() {
               detail={
                 stats.roundsInProgress > 0
                   ? (isPt ? 'Em jogo agora' : isEs ? 'Jugandose ahora' : 'Running now')
-                  : (isPt ? 'Sem pendencia' : isEs ? 'Sin pendientes' : 'No backlog')
+                  : (isPt ? 'Sem pendência' : isEs ? 'Sin pendientes' : 'No backlog')
               }
               accent={stats.roundsInProgress > 0}
             />
@@ -172,8 +186,8 @@ export default function AppDashboard() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.9fr)]">
-        <section className="card p-5 sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <section className="card p-4 sm:p-6">
+          <div className="mb-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
                 {isPt ? 'Portfolio' : isEs ? 'Portafolio' : 'Portfolio'}
@@ -206,13 +220,13 @@ export default function AppDashboard() {
                 <Trophy size={28} />
               </div>
               <p className="text-base font-semibold text-neutral-900">
-                {isPt ? 'Nenhuma liga ainda' : isEs ? 'No hay ligas todavia' : 'No leagues yet'}
+                {isPt ? 'Nenhuma liga ainda' : isEs ? 'Aún no hay ligas' : 'No leagues yet'}
               </p>
               <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-neutral-500">
                 {isPt
-                  ? 'Crie sua primeira operacao, defina regras e comece a rodar partidas com rastreio completo.'
+                  ? 'Crie sua primeira operação, defina regras e comece a rodar partidas com rastreio completo.'
                   : isEs
-                    ? 'Crea tu primera operacion, define reglas y empieza a gestionar jornadas con trazabilidad completa.'
+                    ? 'Crea tu primera operación, define reglas y empieza a gestionar jornadas con trazabilidad completa.'
                     : 'Create your first operation, define rules, and start running rounds with full traceability.'}
               </p>
               <button onClick={() => router.push('/app/leagues')} className="btn-primary mt-6 inline-flex items-center gap-2">
@@ -245,10 +259,10 @@ export default function AppDashboard() {
         </section>
 
         <section className="space-y-4">
-          <div className="card overflow-hidden p-5 sm:p-6">
-            <div className="rounded-[1.5rem] bg-neutral-950 px-5 py-5 text-white shadow-[0_24px_54px_-32px_rgba(15,23,42,0.9)]">
+          <div className="card overflow-hidden p-4 sm:p-6">
+            <div className="rounded-[1.5rem] bg-neutral-950 px-4 py-4 text-white shadow-[0_24px_54px_-32px_rgba(15,23,42,0.9)] sm:px-5 sm:py-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50">
-                {isPt ? 'Operacao ao vivo' : isEs ? 'Operacion en vivo' : 'Live ops'}
+                {isPt ? 'Operação em tempo real' : isEs ? 'Operación en tiempo real' : 'Live ops'}
               </p>
               <p className="mt-3 text-3xl font-black tracking-[-0.04em]">{stats.roundsInProgress}</p>
               <p className="mt-2 text-sm text-white/70">
@@ -258,30 +272,44 @@ export default function AppDashboard() {
                     ? 'jornadas en curso que requieren monitoreo.'
                     : 'rounds currently running and requiring oversight.'}
               </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="rounded-2xl bg-white/8 px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    {isPt ? 'Conclusão' : isEs ? 'Cierre' : 'Completion'}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-white">{stats.completionRate}%</p>
+                </div>
+                <div className="rounded-2xl bg-white/8 px-3 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                    {isPt ? 'Média por liga' : isEs ? 'Media por liga' : 'Avg per league'}
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-white">{stats.averagePlayersPerLeague}</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="card p-5 sm:p-6">
+          <div className="card p-4 sm:p-6">
             <div className="mb-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
                 {isPt ? 'Atalhos' : isEs ? 'Atajos' : 'Shortcuts'}
               </p>
               <h2 className="mt-1 text-lg font-bold text-neutral-900">
-                {isPt ? 'Acoes rapidas' : isEs ? 'Acciones rapidas' : 'Quick actions'}
+                {isPt ? 'Ações rápidas' : isEs ? 'Acciones clave' : 'Quick actions'}
               </h2>
             </div>
             <div className="grid grid-cols-1 gap-3">
               <QuickAction
                 icon={<Plus size={20} className="text-teal-600" />}
                 label={t('createLeague', locale)}
-                description={isPt ? 'Configure nova liga, horarios e quadras' : isEs ? 'Configura nueva liga, horarios y canchas' : 'Set up a new league, slots and courts'}
+                description={isPt ? 'Configure nova liga, horários e quadras' : isEs ? 'Configura nueva liga, horarios y canchas' : 'Set up a new league, slots and courts'}
                 onClick={() => router.push('/app/leagues')}
               />
               {leagues.length > 0 && (
                 <QuickAction
                   icon={<Calendar size={20} className="text-violet-600" />}
                   label={isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
-                  description={isPt ? 'Criar rodada na liga mais recente' : isEs ? 'Crear jornada en la liga mas reciente' : 'Create a round in the most recent league'}
+                  description={isPt ? 'Criar rodada na liga mais recente' : isEs ? 'Crear jornada en la liga más reciente' : 'Create a round in the most recent league'}
                   onClick={() => router.push(`/app/leagues/${leagues[0].id}/rounds`)}
                 />
               )}
@@ -301,7 +329,7 @@ function StatCard({ label, value, icon, color, highlight }: {
   highlight?: boolean;
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-[1.6rem] border border-white/70 bg-white/88 p-4 shadow-[0_18px_44px_-32px_rgba(15,23,42,0.32)] backdrop-blur-xl ${highlight ? 'ring-2 ring-emerald-400/70' : ''}`}>
+    <div className={`relative overflow-hidden rounded-[1.6rem] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,249,0.95))] p-4 shadow-[0_22px_48px_-30px_rgba(15,23,42,0.36)] backdrop-blur-xl ${highlight ? 'ring-2 ring-emerald-400/70' : ''}`}>
       <div className="absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
       <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${color}`}>
         {icon}
@@ -319,7 +347,7 @@ function SpotlightMetric({ label, value, detail, accent }: {
   accent?: boolean;
 }) {
   return (
-    <div className={`rounded-[1.4rem] border px-4 py-4 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.35)] ${accent ? 'border-emerald-200 bg-emerald-500/10' : 'border-white/75 bg-white/86'}`}>
+    <div className={`rounded-[1.4rem] border px-4 py-4 shadow-[0_18px_38px_-26px_rgba(15,23,42,0.36)] ${accent ? 'border-emerald-300 bg-[linear-gradient(180deg,rgba(236,253,245,0.96),rgba(220,252,231,0.9))]' : 'border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(255,253,248,0.93))]'}`}>
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-neutral-500">{label}</p>
       <p className="mt-2 text-3xl font-black tracking-[-0.05em] text-neutral-950">{value}</p>
       <p className="mt-1 text-xs font-medium text-neutral-500">{detail}</p>
@@ -350,7 +378,7 @@ function LeagueCard({ league, locale, statusLabel, statusColor, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="group w-full rounded-[1.7rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-4 text-left shadow-[0_20px_46px_-34px_rgba(15,23,42,0.35)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_52px_-30px_rgba(13,148,136,0.28)]"
+      className="group w-full rounded-[1.7rem] border border-black/8 bg-[linear-gradient(145deg,rgba(255,255,255,0.985),rgba(252,252,250,0.95))] p-4 text-left shadow-[0_22px_48px_-32px_rgba(15,23,42,0.36)] transition duration-300 hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.24)]"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -362,7 +390,7 @@ function LeagueCard({ league, locale, statusLabel, statusColor, onClick }: {
             <p className="truncate text-sm font-bold text-neutral-900 sm:text-[15px]">{league.name}</p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-neutral-500">
-                {weekdayShort[league.weekday]} · {league.playerCount} {isPt ? 'jogadoras' : isEs ? 'jugadoras' : 'players'}
+                {weekdayShort[league.weekday]} - {league.playerCount} {isPt ? 'jogadoras' : isEs ? 'jugadoras' : 'players'}
               </span>
               {league.openRounds > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-700">
@@ -377,7 +405,7 @@ function LeagueCard({ league, locale, statusLabel, statusColor, onClick }: {
         <div className="flex flex-shrink-0 items-center gap-2">
           {league.lastRound && (
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusColor(league.lastRound.status)}`}>
-              J{league.lastRound.number} · {statusLabel(league.lastRound)}
+              J{league.lastRound.number} - {statusLabel(league.lastRound)}
             </span>
           )}
           {league.is_finished && (
@@ -401,7 +429,7 @@ function QuickAction({ icon, label, description, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="group flex w-full items-start gap-3 rounded-[1.5rem] border border-white/80 bg-white/75 p-4 text-left shadow-[0_18px_38px_-30px_rgba(15,23,42,0.28)] transition duration-300 hover:-translate-y-0.5 hover:border-teal-200 hover:bg-white"
+      className="group flex w-full items-start gap-3 rounded-[1.5rem] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,249,0.94))] p-4 text-left shadow-[0_20px_42px_-28px_rgba(15,23,42,0.3)] transition duration-300 hover:-translate-y-0.5 hover:border-teal-200 hover:bg-white"
     >
       <div className="mt-0.5 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-neutral-900/5 transition group-hover:bg-teal-500/10">
         {icon}

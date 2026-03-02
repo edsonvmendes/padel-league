@@ -9,7 +9,8 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList, FieldError } from '@/components/Skeleton';
 import { Player, PaymentMethod } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { Plus, Search, X, Edit2, Trash2, Users } from 'lucide-react';
+import { downloadCsv, safeFileName } from '@/lib/clientExport';
+import { Plus, Search, X, Edit2, Trash2, Users, Download } from 'lucide-react';
 
 type FormState = {
   full_name: string;
@@ -84,8 +85,6 @@ export default function PlayersPage() {
     const nextErrors = validate(form, {
       full_name: {
         required: true,
-        minLength: 2,
-        maxLength: 80,
         label: isEs ? 'Nombre' : isPt ? 'Nome' : 'Name',
       },
       birthdate: {
@@ -94,8 +93,8 @@ export default function PlayersPage() {
         custom: (value) => {
           if (!value) return null;
           const date = new Date(value);
-          if (isNaN(date.getTime())) return 'Invalid date';
-          if (date > new Date()) return isEs ? 'Fecha no puede ser futura' : isPt ? 'Data nao pode ser futura' : 'Date cannot be in the future';
+          if (isNaN(date.getTime())) return isEs ? 'Fecha invalida' : isPt ? 'Data invalida' : 'Invalid date';
+          if (date > new Date()) return isEs ? 'La fecha no puede ser futura' : isPt ? 'A data não pode ser futura' : 'Date cannot be in the future';
           return null;
         },
       },
@@ -122,13 +121,13 @@ export default function PlayersPage() {
           () => db.from('players').update(payload).eq('id', editing.id),
           isEs ? 'Error al actualizar jugadora' : isPt ? 'Erro ao atualizar jogadora' : 'Failed to update player'
         );
-        toast.success(isEs ? 'Jogadora atualizada!' : isPt ? 'Jogadora atualizada!' : 'Player updated!');
+        toast.success(isEs ? 'Jugadora actualizada.' : isPt ? 'Jogadora atualizada.' : 'Player updated.');
       } else {
         await runOrThrow(
           () => db.from('players').insert({ ...payload, league_id: leagueId, owner_user_id: user!.id }),
           isEs ? 'Error al agregar jugadora' : isPt ? 'Erro ao adicionar jogadora' : 'Failed to add player'
         );
-        toast.success(isEs ? 'Jogadora adicionada!' : isPt ? 'Jogadora adicionada!' : 'Player added!');
+        toast.success(isEs ? 'Jugadora agregada.' : isPt ? 'Jogadora adicionada.' : 'Player added.');
       }
 
       setShowForm(false);
@@ -144,7 +143,7 @@ export default function PlayersPage() {
       message: isEs
         ? `Eliminar "${player.full_name}"? Esta accion no se puede deshacer.`
         : isPt
-          ? `Excluir "${player.full_name}"? Essa acao nao pode ser desfeita.`
+          ? `Excluir "${player.full_name}"? Essa ação não pode ser desfeita.`
           : `Delete "${player.full_name}"? This cannot be undone.`,
       confirmLabel: isEs ? 'Eliminar' : isPt ? 'Excluir' : 'Delete',
       cancelLabel: isEs ? 'Cancelar' : isPt ? 'Cancelar' : 'Cancel',
@@ -158,7 +157,7 @@ export default function PlayersPage() {
       isEs ? 'Error al eliminar' : isPt ? 'Erro ao excluir' : 'Failed to delete'
     );
 
-    toast.success(isEs ? 'Jogadora excluida' : isPt ? 'Jogadora excluida' : 'Player deleted');
+    toast.success(isEs ? 'Jugadora eliminada.' : isPt ? 'Jogadora excluida.' : 'Player deleted.');
     load();
   };
 
@@ -185,9 +184,41 @@ export default function PlayersPage() {
     card: isEs ? 'Tarjeta' : isPt ? 'Cartao' : 'Card',
   }[payment]);
 
+  const exportPlayers = () => {
+    const source = filtered.length > 0 ? filtered : players;
+    if (source.length === 0) {
+      toast.warning(isPt ? 'Nao ha jogadoras para exportar' : isEs ? 'No hay jugadoras para exportar' : 'No players to export');
+      return;
+    }
+
+    const headers = [
+      isPt ? 'Nome' : isEs ? 'Nombre' : 'Name',
+      isPt ? 'Status' : isEs ? 'Estado' : 'Status',
+      isPt ? 'Pagamento' : isEs ? 'Pago' : 'Payment',
+      isPt ? 'Nascimento' : isEs ? 'Nacimiento' : 'Birthdate',
+      isPt ? 'Observacoes' : isEs ? 'Observaciones' : 'Notes',
+    ];
+
+    const rows = source.map((player) => [
+      player.full_name,
+      player.is_active ? (isPt ? 'Ativa' : isEs ? 'Activa' : 'Active') : (isPt ? 'Inativa' : isEs ? 'Inactiva' : 'Inactive'),
+      payLabel(player.payment),
+      player.birthdate || '',
+      player.notes || '',
+    ]);
+
+    downloadCsv(
+      `${safeFileName(`players-${leagueId}`)}.csv`,
+      headers,
+      rows
+    );
+
+    toast.success(isPt ? 'Lista exportada.' : isEs ? 'Lista exportada.' : 'Roster exported.');
+  };
+
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(59,130,246,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 sm:p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl space-y-3">
@@ -195,21 +226,33 @@ export default function PlayersPage() {
               {isPt ? 'Base de atletas' : isEs ? 'Base de jugadoras' : 'Player roster'}
             </span>
             <div>
-              <h1 className="text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{t('players', locale)}</h1>
+              <h1 className="text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{t('players', locale)}</h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-600 sm:text-[15px]">
                 {isPt
-                  ? 'Gerencie presenca operacional, status e observacoes da liga com leitura rapida e edicao sem atrito.'
+                  ? 'Gerencie presença operacional, status e observações da liga com leitura rápida e edição sem atrito.'
                   : isEs
-                    ? 'Gestiona presencia operativa, estado y observaciones de la liga con lectura rapida y edicion sin friccion.'
+                    ? 'Gestiona presencia operativa, estado y observaciones de la liga con lectura rápida y edición sin fricción.'
                     : 'Manage operational presence, status, and notes with fast scanning and low-friction editing.'}
+              </p>
+              <p className="mt-2 max-w-xl text-xs leading-5 text-neutral-500 sm:text-sm">
+                {isPt ? 'O cadastro continua livre: nome, status e observações podem ser ajustados sem travar a operação.' : isEs ? 'El registro sigue libre: nombre, estado y observaciones pueden ajustarse sin bloquear la operación.' : 'The roster stays flexible: name, status, and notes can be adjusted without blocking operations.'}
               </p>
             </div>
           </div>
 
-          <button onClick={openNew} className="btn-primary inline-flex items-center gap-2 self-start lg:self-auto">
-            <Plus size={16} />
-            {t('addPlayer', locale)}
-          </button>
+          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <button
+              onClick={exportPlayers}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white lg:w-auto"
+            >
+              <Download size={16} />
+              {isPt ? 'Exportar CSV' : isEs ? 'Exportar CSV' : 'Export CSV'}
+            </button>
+            <button onClick={openNew} className="btn-primary inline-flex w-full items-center justify-center gap-2 lg:w-auto">
+              <Plus size={16} />
+              {t('addPlayer', locale)}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -268,9 +311,9 @@ export default function PlayersPage() {
           <p className="text-lg font-bold text-neutral-900">{t('noPlayers', locale)}</p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
             {isPt
-              ? 'Monte a base da liga para liberar sorteios, presenca e atribuicao de partidas.'
+              ? 'Monte a base da liga para liberar sorteios, presença e atribuição de partidas.'
               : isEs
-                ? 'Construye la base de la liga para liberar sorteos, presencia y asignacion de partidos.'
+                ? 'Construye la base de la liga para habilitar sorteos, asistencia y asignacion de partidos.'
                 : 'Build the roster to unlock attendance, round setup, and match assignment.'}
           </p>
           <button onClick={openNew} className="btn-primary mt-6 inline-flex items-center gap-2">
@@ -309,7 +352,7 @@ export default function PlayersPage() {
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs leading-5 text-neutral-500">
-                      {payLabel(player.payment)}{player.notes ? ` · ${player.notes}` : ''}
+                      {payLabel(player.payment)}{player.notes ? ` - ${player.notes}` : ''}
                     </p>
                   </div>
                 </div>
@@ -354,7 +397,7 @@ export default function PlayersPage() {
               </button>
             </div>
 
-            <div className="space-y-5 px-6 py-6">
+            <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
               <div>
                 <label className="label-field">{t('playerName', locale)}</label>
                 <input
@@ -367,6 +410,15 @@ export default function PlayersPage() {
                   autoFocus
                 />
                 <FieldError message={errors.full_name} />
+                {!errors.full_name && (
+                  <p className="mt-1 text-xs leading-5 text-neutral-400">
+                    {isPt
+                      ? 'Use o nome do jeito que voce organiza sua lista. O cadastro continua simples e livre.'
+                      : isEs
+                        ? 'Usa el nombre como organizas tu lista. El registro sigue simple y libre.'
+                        : 'Use the name however you organize your roster. The entry stays simple and flexible.'}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -413,8 +465,11 @@ export default function PlayersPage() {
                   className="input-field"
                   value={form.notes}
                   onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-                  placeholder={isEs ? 'Telefono, nivel, observaciones...' : isPt ? 'Telefone, nivel, observacoes...' : 'Phone, level, notes...'}
+                  placeholder={isEs ? 'Teléfono, nivel, observaciones...' : isPt ? 'Telefone, nível, observações...' : 'Phone, level, notes...'}
                 />
+                <p className="mt-1 text-xs leading-5 text-neutral-400">
+                  {isPt ? 'Use este campo do seu jeito: telefone, nível, observação interna ou qualquer lembrete útil.' : isEs ? 'Usa este campo a tu manera: teléfono, nivel, observación interna o cualquier recordatorio útil.' : 'Use this field your own way: phone, level, internal notes, or any helpful reminder.'}
+                </p>
               </div>
 
               <div className="flex items-center justify-between rounded-3xl bg-neutral-900/5 px-4 py-3">

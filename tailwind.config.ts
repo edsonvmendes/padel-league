@@ -10,8 +10,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
-        heading: ['var(--font-poppins)', 'system-ui', 'sans-serif'],
+        sans: ['ui-rounded', '"Avenir Next"', '"Segoe UI"', 'system-ui', 'sans-serif'],
+        heading: ['"Trebuchet MS"', '"Avenir Next"', '"Segoe UI"', 'system-ui', 'sans-serif'],
       },
     },
   },

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { t } from '@/lib/i18n';
 import { BrandMark } from '@/components/BrandMark';
+import { ProductSignature } from '@/components/ProductSignature';
 import { Home, Users, Calendar, Settings, LogOut, Menu, X, Trophy } from 'lucide-react';
 
 interface NavItem {
@@ -20,6 +21,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [leagueId, setLeagueId] = useState<string | null>(null);
+  const firstName = profile?.full_name?.trim().split(/\s+/)[0] || '';
 
   useEffect(() => {
     const match = pathname.match(/\/app\/leagues\/([^/]+)/);
@@ -91,6 +93,16 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         {/* Brand */}
         <div className="p-6 border-b border-black/5">
           <BrandMark withWordmark />
+          <div className="mt-4 rounded-2xl border border-white/60 bg-white/65 px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+              {locale === 'pt' ? 'Sessão ativa' : locale === 'es' ? 'Sesión actual' : 'Active session'}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-neutral-700">
+              {firstName
+                ? (locale === 'pt' ? `Olá, ${firstName}` : locale === 'es' ? `Hola, ${firstName}` : `Hi, ${firstName}`)
+                : (locale === 'pt' ? 'Olá' : locale === 'es' ? 'Hola' : 'Hi')}
+            </p>
+          </div>
         </div>
 
         {/* Nav sections */}
@@ -132,7 +144,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               PT
             </button>
           </div>
-          <div className="text-xs text-neutral-400 text-center truncate">{profile?.full_name}</div>
+          <div className="rounded-2xl border border-black/5 bg-white/55 px-3 py-2.5">
+            <ProductSignature compact />
+          </div>
+          <div className="text-xs text-neutral-400 text-center truncate">{profile?.full_name || user.email}</div>
           <button onClick={handleSignOut}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-500 hover:text-red-600 hover:bg-red-50 transition-colors">
             <LogOut size={16} />
@@ -159,10 +174,23 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-30 bg-black/30" onClick={() => setSidebarOpen(false)}>
           <div className="w-64 bg-white h-full pt-16 px-3 py-4 space-y-1 overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="mb-3 rounded-2xl border border-black/5 bg-neutral-50 px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+                {locale === 'pt' ? 'Sessão ativa' : locale === 'es' ? 'Sesión actual' : 'Active session'}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-neutral-700">
+                {firstName
+                  ? (locale === 'pt' ? `Olá, ${firstName}` : locale === 'es' ? `Hola, ${firstName}` : `Hi, ${firstName}`)
+                  : (locale === 'pt' ? 'Olá' : locale === 'es' ? 'Hola' : 'Hi')}
+              </p>
+            </div>
             {allNav.map(item => (
               <NavButton key={item.href} item={item} active={isActive(item.href)} onClick={() => handleNav(item.href)} />
             ))}
             <hr className="my-3" />
+            <div className="rounded-2xl border border-black/5 bg-neutral-50 px-3 py-2.5">
+              <ProductSignature compact />
+            </div>
             <button onClick={handleSignOut}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-neutral-500 hover:text-red-600">
               <LogOut size={16} />
@@ -174,7 +202,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main content */}
       <main className="lg:ml-[19rem] xl:ml-[21rem] pt-14 lg:pt-0 pb-20 lg:pb-8 min-h-screen">
-        <div className="max-w-6xl mx-auto px-4 py-6 lg:px-6">
+        <div className="w-full max-w-[88rem] px-4 py-6 lg:px-6">
           {children}
         </div>
       </main>

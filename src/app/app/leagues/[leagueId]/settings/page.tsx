@@ -49,7 +49,7 @@ export default function LeagueSettingsPage() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: isPt ? 'Geral' : isEs ? 'General' : 'General', icon: <Settings size={15} /> },
-    { id: 'slots', label: isPt ? 'Horarios' : isEs ? 'Horarios' : 'Time Slots', icon: <Clock size={15} /> },
+    { id: 'slots', label: isPt ? 'Horários' : isEs ? 'Horarios' : 'Time Slots', icon: <Clock size={15} /> },
     { id: 'courts', label: isPt ? 'Quadras' : isEs ? 'Canchas' : 'Courts', icon: <Grid3X3 size={15} /> },
     { id: 'rules', label: isPt ? 'Regras' : isEs ? 'Reglas' : 'Rules', icon: <Trophy size={15} /> },
   ];
@@ -77,7 +77,7 @@ export default function LeagueSettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 sm:p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
         <div className="relative flex items-start gap-4">
           <button
@@ -88,13 +88,13 @@ export default function LeagueSettingsPage() {
           </button>
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
-              {isPt ? 'Centro de configuracao' : isEs ? 'Centro de configuracion' : 'Configuration center'}
+              {isPt ? 'Centro de configuração' : isEs ? 'Centro de ajustes' : 'Configuration center'}
             </p>
-            <h1 className="mt-1 text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
-              {isPt ? 'Configuracoes' : isEs ? 'Configuracion' : 'Settings'}
+            <h1 className="mt-1 text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
+              {isPt ? 'Configurações' : isEs ? 'Configuración' : 'Settings'}
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600 sm:text-[15px]">
-              {league.name} · {isPt ? 'Regras, capacidade e estrutura operacional da liga.' : isEs ? 'Reglas, capacidad y estructura operativa de la liga.' : 'Rules, capacity, and operational structure for this league.'}
+              {league.name} - {isPt ? 'Regras, capacidade e estrutura operacional da liga, com ajuste livre a qualquer momento.' : isEs ? 'Reglas, capacidad y estructura operativa de la liga, con ajuste libre en cualquier momento.' : 'Rules, capacity, and operational structure for this league, with flexible edits any time.'}
             </p>
           </div>
         </div>
@@ -123,7 +123,7 @@ export default function LeagueSettingsPage() {
           locale={locale}
           onSaved={(updated) => {
             setLeague(updated);
-            toast.success(isPt ? 'Salvo!' : isEs ? 'Guardado!' : 'Saved!');
+            toast.success(isPt ? 'Alteracoes salvas.' : isEs ? 'Cambios guardados.' : 'Changes saved.');
           }}
         />
       )}
@@ -157,7 +157,7 @@ export default function LeagueSettingsPage() {
           locale={locale}
           onSaved={() => {
             loadAll();
-            toast.success(isPt ? 'Regras salvas!' : isEs ? 'Reglas guardadas!' : 'Rules saved!');
+            toast.success(isPt ? 'Regras salvas.' : isEs ? 'Reglas guardadas.' : 'Rules saved.');
           }}
         />
       )}
@@ -193,10 +193,10 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
 
   const handleSave = async () => {
     const nextErrors = validate(form, {
-      name: { required: true, minLength: 2, maxLength: 60, label: isPt ? 'Nome' : isEs ? 'Nombre' : 'Name' },
+      name: { required: true, label: isPt ? 'Nome' : isEs ? 'Nombre' : 'Name' },
       rounds_count: { required: true, min: 1, max: 30, label: isPt ? 'Rodadas' : isEs ? 'Jornadas' : 'Rounds' },
       max_courts_per_slot: { required: true, min: 1, max: 12, label: isPt ? 'Quadras nivel' : isEs ? 'Canchas nivel' : 'Level courts' },
-      physical_courts_count: { required: true, min: 1, max: 20, label: isPt ? 'Quadras fisicas' : isEs ? 'Canchas fisicas' : 'Physical courts' },
+      physical_courts_count: { required: true, min: 1, max: 20, label: isPt ? 'Quadras físicas' : isEs ? 'Canchas reales' : 'Physical courts' },
     });
 
     if (Object.keys(nextErrors).length) {
@@ -220,7 +220,21 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
 
   return (
     <div className="card p-5 sm:p-6 space-y-5">
-      <FormField label={isPt ? 'Nome da liga' : isEs ? 'Nombre de la liga' : 'League name'} error={errors.name}>
+      <div className="rounded-[1.5rem] bg-neutral-900/5 px-4 py-4 text-sm leading-6 text-neutral-600">
+        {isPt ? 'Nada aqui fica engessado. Use estes campos como base e ajuste a liga sempre que a operação pedir.' : isEs ? 'Nada aqui queda rígido. Usa estos campos como base y ajusta la liga siempre que la operación lo pida.' : 'Nothing here is rigid. Use these fields as a base and adjust the league whenever operations require it.'}
+      </div>
+
+      <FormField
+        label={isPt ? 'Nome da liga' : isEs ? 'Nombre de la liga' : 'League name'}
+        hint={
+          isPt
+            ? 'Nome livre para sua operação. O identificador técnico da liga continua interno.'
+            : isEs
+              ? 'Nombre libre para tu operación. El identificador técnico de la liga sigue siendo interno.'
+              : 'Free-form name for your operation. The league technical identifier remains internal.'
+        }
+        error={errors.name}
+      >
         <input
           className={`input-field ${errors.name ? 'border-red-400' : ''}`}
           value={form.name}
@@ -232,7 +246,7 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
       </FormField>
 
       <FormField label={isPt ? 'Dia de jogo' : isEs ? 'Dia de juego' : 'Match day'}>
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
           {weekdays.map((day) => (
             <button
               key={day}
@@ -276,7 +290,7 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
           />
         </FormField>
 
-        <FormField label={isPt ? 'Quadras fisicas' : isEs ? 'Canchas fisicas' : 'Physical courts'} error={errors.physical_courts_count}>
+        <FormField label={isPt ? 'Quadras físicas' : isEs ? 'Canchas reales' : 'Physical courts'} error={errors.physical_courts_count}>
           <input
             type="number"
             min={1}
@@ -307,12 +321,12 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
 
   const handleAdd = async () => {
     if (!newTime.match(/^\d{2}:\d{2}$/)) {
-      toast.warning(isPt ? 'Horario invalido (HH:MM)' : isEs ? 'Horario invalido (HH:MM)' : 'Invalid time (HH:MM)');
+      toast.warning(isPt ? 'Horário inválido (HH:MM)' : isEs ? 'Horario inválido (HH:MM)' : 'Invalid time (HH:MM)');
       return;
     }
 
     if (slots.some((slot) => slot.slot_time === newTime)) {
-      toast.warning(isPt ? 'Horario ja existe' : isEs ? 'Horario ya existe' : 'Time slot already exists');
+      toast.warning(isPt ? 'Horário já existe' : isEs ? 'Horario ya existe' : 'Time slot already exists');
       return;
     }
 
@@ -321,7 +335,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
     try {
       await runOrThrow(() => db.from('league_time_slots').insert({ league_id: leagueId, slot_time: newTime, sort_order: slots.length }));
       setNewTime('');
-      toast.success(isPt ? 'Horario adicionado!' : isEs ? 'Horario agregado!' : 'Slot added!');
+      toast.success(isPt ? 'Horário adicionado.' : isEs ? 'Horario agregado.' : 'Slot added.');
       onChanged();
     } finally {
       setAdding(false);
@@ -330,7 +344,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
 
   const handleDelete = async (slot: LeagueTimeSlot) => {
     const ok = await confirm({
-      title: isPt ? 'Remover horario' : isEs ? 'Eliminar horario' : 'Remove slot',
+      title: isPt ? 'Remover horário' : isEs ? 'Eliminar horario' : 'Remove slot',
       message: `"${slot.slot_time}"`,
       confirmLabel: isPt ? 'Remover' : isEs ? 'Eliminar' : 'Remove',
       cancelLabel: isPt ? 'Cancelar' : isEs ? 'Cancelar' : 'Cancel',
@@ -340,7 +354,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
     if (!ok) return;
 
     await runOrThrow(() => db.from('league_time_slots').delete().eq('id', slot.id));
-    toast.success(isPt ? 'Removido' : isEs ? 'Eliminado' : 'Removed');
+    toast.success(isPt ? 'Horário removido.' : isEs ? 'Horario eliminado.' : 'Slot removed.');
     onChanged();
   };
 
@@ -355,7 +369,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
   return (
     <div className="card p-5 sm:p-6 space-y-5">
       <div className="rounded-[1.5rem] bg-neutral-900/5 px-4 py-4 text-sm leading-6 text-neutral-600">
-        {isPt ? 'Cada horario cria uma camada de quadras por rodada.' : isEs ? 'Cada horario crea una capa de canchas por jornada.' : 'Each slot creates a layer of courts per round.'}
+        {isPt ? 'Cada horário cria uma camada de quadras por rodada. Você pode começar com poucos horários e expandir depois.' : isEs ? 'Cada horario crea una capa de canchas por jornada. Puedes empezar con pocos horarios y ampliar después.' : 'Each slot creates one court layer for each round. You can start with fewer slots and expand later.'}
       </div>
 
       <div className="space-y-3">
@@ -377,7 +391,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
 
         {slots.length === 0 && (
           <div className="rounded-[1.5rem] border border-dashed border-neutral-200 bg-white/60 py-10 text-center text-sm font-medium text-neutral-400">
-            {isPt ? 'Nenhum horario cadastrado' : isEs ? 'Sin horarios' : 'No time slots yet'}
+            {isPt ? 'Nenhum horário cadastrado' : isEs ? 'Aún no hay horarios' : 'No time slots yet'}
           </div>
         )}
       </div>
@@ -425,7 +439,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
         await runOrThrow(() => db.from('courts').delete().in('id', toRemove));
       }
 
-      toast.success(isPt ? 'Quadras sincronizadas!' : isEs ? 'Canchas sincronizadas!' : 'Courts synced!');
+      toast.success(isPt ? 'Quadras sincronizadas.' : isEs ? 'Canchas sincronizadas.' : 'Courts synced.');
       onChanged();
     } finally {
       setSyncing(false);
@@ -435,7 +449,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
   const handleAdd = async () => {
     const next = courts.length > 0 ? Math.max(...courts.map((court) => court.court_number)) + 1 : 1;
     await runOrThrow(() => db.from('courts').insert({ league_id: leagueId, court_number: next }));
-    toast.success(isPt ? 'Quadra adicionada!' : isEs ? 'Cancha agregada!' : 'Court added!');
+    toast.success(isPt ? 'Quadra adicionada.' : isEs ? 'Cancha agregada.' : 'Court added.');
     onChanged();
   };
 
@@ -451,7 +465,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
     if (!ok) return;
 
     await runOrThrow(() => db.from('courts').delete().eq('id', court.id));
-    toast.success(isPt ? 'Removida' : isEs ? 'Eliminada' : 'Removed');
+    toast.success(isPt ? 'Quadra removida.' : isEs ? 'Cancha eliminada.' : 'Court removed.');
     onChanged();
   };
 
@@ -459,7 +473,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
     <div className="card p-5 sm:p-6 space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-medium text-neutral-500">
-          {courts.length} {isPt ? 'quadras' : isEs ? 'canchas' : 'courts'} · {isPt ? 'configurado para' : isEs ? 'configurado para' : 'configured for'} {league.max_courts_per_slot}
+          {courts.length} {isPt ? 'quadras' : isEs ? 'canchas' : 'courts'} - {isPt ? 'configurado para' : isEs ? 'configurado para' : 'configured for'} {league.max_courts_per_slot}
         </p>
         {!inSync && (
           <button onClick={syncCourts} disabled={syncing} className="inline-flex items-center justify-center rounded-2xl bg-teal-500/10 px-4 py-2 text-xs font-semibold text-teal-700 ring-1 ring-teal-500/12 transition hover:bg-teal-500/15">
@@ -487,7 +501,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
 
         {courts.length === 0 && (
           <div className="rounded-[1.5rem] border border-dashed border-neutral-200 bg-white/60 py-10 text-center text-sm font-medium text-neutral-400">
-            {isPt ? 'Nenhuma quadra cadastrada' : isEs ? 'Sin canchas' : 'No courts yet'}
+            {isPt ? 'Nenhuma quadra cadastrada' : isEs ? 'Aún no hay canchas' : 'No courts yet'}
           </div>
         )}
       </div>
@@ -524,7 +538,7 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
     const nextErrors = validate(form, {
       absence_penalty: { required: true, min: -20, max: 0, label: isPt ? 'Penalidade' : isEs ? 'Penalizacion' : 'Penalty' },
       three_absences_bonus: { required: true, min: 0, max: 30, label: isPt ? 'Bonus' : isEs ? 'Bono' : 'Bonus' },
-      promotion_count: { required: true, min: 0, max: 6, label: isPt ? 'Promocao' : isEs ? 'Ascenso' : 'Promotion' },
+      promotion_count: { required: true, min: 0, max: 6, label: isPt ? 'Promoção' : isEs ? 'Ascenso' : 'Promotion' },
       relegation_count: { required: true, min: 0, max: 6, label: isPt ? 'Rebaixamento' : isEs ? 'Descenso' : 'Relegation' },
     });
 
@@ -549,10 +563,14 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
 
   return (
     <div className="card p-5 sm:p-6 space-y-5">
+      <div className="rounded-[1.5rem] bg-neutral-900/5 px-4 py-4 text-sm leading-6 text-neutral-600">
+        {isPt ? 'Estas regras são parâmetros de operação. Ajuste conforme sua liga evolui, sem medo de recalibrar depois.' : isEs ? 'Estas reglas son parámetros de operación. Ajústalas según evoluciona tu liga, sin problema en recalibrar después.' : 'These rules are operating parameters. Adjust them as your league evolves, and recalibrate whenever needed.'}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField
-          label={isPt ? 'Penalidade ausencia' : isEs ? 'Penalizacion ausencia' : 'Absence penalty'}
-          hint={isPt ? 'Valor negativo, ex: -5' : isEs ? 'Valor negativo, ej: -5' : 'Negative value, e.g. -5'}
+          label={isPt ? 'Penalidade ausência' : isEs ? 'Penalización por ausencia' : 'Absence penalty'}
+          hint={isPt ? 'Use o peso que fizer sentido para a sua operação, ex: -5' : isEs ? 'Usa el peso que tenga sentido para tu operación, ej: -5' : 'Use the weight that fits your operation, e.g. -5'}
           error={errors.absence_penalty}
         >
           <input
@@ -568,7 +586,7 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
         </FormField>
 
         <FormField
-          label={isPt ? 'Bonus 3 ausencias' : isEs ? 'Bono 3 ausencias' : '3-absences bonus'}
+          label={isPt ? 'Bônus 3 ausências' : isEs ? 'Bono por 3 ausencias' : '3-absences bonus'}
           error={errors.three_absences_bonus}
         >
           <input
@@ -592,7 +610,7 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
       />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label={isPt ? 'Promocao (top N)' : isEs ? 'Ascenso (top N)' : 'Promotion (top N)'} error={errors.promotion_count}>
+        <FormField label={isPt ? 'Promoção (top N)' : isEs ? 'Ascenso (top N)' : 'Promotion (top N)'} error={errors.promotion_count}>
           <input
             type="number"
             min={0}
@@ -623,14 +641,14 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
 
       <RuleToggle
         label={isPt ? 'Permitir fundir quadras' : isEs ? 'Permitir unir canchas' : 'Allow merging courts'}
-        hint={isPt ? 'Fundir quadras quando ha muitas ausencias' : isEs ? 'Unir canchas cuando hay muchas ausencias' : 'Merge courts when many absences'}
+        hint={isPt ? 'Ative se sua liga precisar acomodar ausências com mais flexibilidade' : isEs ? 'Actívalo si tu liga necesita absorber ausencias con más flexibilidad' : 'Enable if your league needs more flexibility when absences happen'}
         value={form.allow_merge_courts}
         onChange={(value) => updateField('allow_merge_courts', value)}
       />
 
       <FormField
         label={isPt ? 'Template WhatsApp' : isEs ? 'Plantilla WhatsApp' : 'WhatsApp template'}
-        hint={isPt ? 'Deixe vazio para usar o template padrao' : isEs ? 'Vacio = template por defecto' : 'Empty = default template'}
+        hint={isPt ? 'Opcional. Deixe vazio ou monte sua própria base de mensagem.' : isEs ? 'Opcional. Déjalo vacío o arma tu propia base de mensaje.' : 'Optional. Leave it blank or build your own message base.'}
       >
         <textarea
           className="input-field h-28 resize-y text-sm"

@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList } from '@/components/Skeleton';
 import { Round, League, LeagueTimeSlot, Court } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy, MapPin } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy, MapPin, MessageCircle } from 'lucide-react';
 
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -101,7 +101,7 @@ export default function RoundsPage() {
     if (slots.length === 0 || courts.length === 0) {
       toast.warning(
         isPt
-          ? 'Configure horarios e quadras antes de criar a rodada'
+          ? 'Configure horários e quadras antes de criar a rodada'
           : isEs
             ? 'Configura horarios y canchas antes de crear la jornada'
             : 'Configure time slots and courts before creating a round'
@@ -151,7 +151,7 @@ export default function RoundsPage() {
       }
 
       setShowModal(false);
-      toast.success(isPt ? `Rodada ${nextNumber} criada!` : isEs ? `Jornada ${nextNumber} creada!` : `Round ${nextNumber} created!`);
+      toast.success(isPt ? `Rodada ${nextNumber} criada.` : isEs ? `Jornada ${nextNumber} creada.` : `Round ${nextNumber} created.`);
       router.push(`/app/leagues/${leagueId}/rounds/${newRound.id}`);
     } finally {
       setCreating(false);
@@ -160,7 +160,7 @@ export default function RoundsPage() {
 
   const handleDeleteRound = async (round: Round) => {
     if (round.status === 'closed') {
-      toast.warning(isPt ? 'Rodadas fechadas nao podem ser excluidas' : isEs ? 'No se pueden eliminar jornadas cerradas' : 'Closed rounds cannot be deleted');
+      toast.warning(isPt ? 'Rodadas fechadas não podem ser excluídas' : isEs ? 'No se pueden eliminar jornadas cerradas' : 'Closed rounds cannot be deleted');
       return;
     }
 
@@ -179,7 +179,7 @@ export default function RoundsPage() {
       isPt ? 'Erro ao excluir rodada' : isEs ? 'Error al eliminar jornada' : 'Failed to delete round'
     );
 
-    toast.success(isPt ? 'Rodada excluida' : isEs ? 'Jornada eliminada' : 'Round deleted');
+    toast.success(isPt ? 'Rodada excluida.' : isEs ? 'Jornada eliminada.' : 'Round deleted.');
     loadAll();
   };
 
@@ -214,9 +214,47 @@ export default function RoundsPage() {
   const runningCount = rounds.filter((round) => round.status === 'running').length;
   const draftCount = rounds.filter((round) => round.status === 'draft').length;
 
+  const copyWhatsAppSummary = async () => {
+    const latestRound = rounds.length > 0 ? [...rounds].sort((a, b) => b.number - a.number)[0] : null;
+    const lines = [
+      `*${league?.name || (isPt ? 'Liga' : isEs ? 'Liga' : 'League')}*`,
+      isPt ? `Dia base: ${league?.weekday || '-'}` : isEs ? `Dia base: ${league?.weekday || '-'}` : `Base day: ${league?.weekday || '-'}`,
+      isPt ? `Rodadas: ${rounds.length}/${league?.rounds_count || 0}` : isEs ? `Jornadas: ${rounds.length}/${league?.rounds_count || 0}` : `Rounds: ${rounds.length}/${league?.rounds_count || 0}`,
+      isPt ? `Em andamento: ${runningCount}` : isEs ? `En curso: ${runningCount}` : `Running: ${runningCount}`,
+      isPt ? `Fechadas: ${closedCount}` : isEs ? `Cerradas: ${closedCount}` : `Closed: ${closedCount}`,
+    ];
+
+    if (latestRound) {
+      lines.push(
+        isPt
+          ? `Última rodada: #${latestRound.number} (${fmtDate(latestRound.round_date)})`
+          : isEs
+            ? `Última jornada: #${latestRound.number} (${fmtDate(latestRound.round_date)})`
+            : `Latest round: #${latestRound.number} (${fmtDate(latestRound.round_date)})`
+      );
+    }
+
+    if (slots.length === 0 || courts.length === 0) {
+      lines.push(
+        isPt
+          ? 'Ajuste pendente: configurar horários e quadras.'
+          : isEs
+            ? 'Ajuste pendiente: configurar horarios y canchas.'
+            : 'Pending setup: configure slots and courts.'
+      );
+    }
+
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      toast.success(isPt ? 'Resumo copiado para WhatsApp.' : isEs ? 'Resumen copiado para WhatsApp.' : 'Summary copied for WhatsApp.');
+    } catch {
+      toast.error(isPt ? 'Nao foi possivel copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(245,158,11,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(245,158,11,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)] sm:p-6">
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-2xl space-y-3">
@@ -224,12 +262,12 @@ export default function RoundsPage() {
               {isPt ? 'Agenda operacional' : isEs ? 'Agenda operativa' : 'Round calendar'}
             </span>
             <div>
-              <h1 className="text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{t('rounds', locale)}</h1>
+              <h1 className="text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{t('rounds', locale)}</h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-600 sm:text-[15px]">
                 {league?.name ? league.name : ''}
-                {league?.name ? ' · ' : ''}
+                {league?.name ? ' - ' : ''}
                 {isPt
-                  ? 'Controle abertura, progresso e historico de rodadas com visao clara de capacidade e status.'
+                  ? 'Controle abertura, progresso e histórico de rodadas com visão clara de capacidade e status.'
                   : isEs
                     ? 'Controla apertura, progreso e historial de jornadas con una lectura clara de capacidad y estado.'
                     : 'Track launch, progress, and round history with a clear read on capacity and status.'}
@@ -237,10 +275,19 @@ export default function RoundsPage() {
             </div>
           </div>
 
-          <button onClick={openModal} className="btn-primary inline-flex items-center gap-2 self-start lg:self-auto">
-            <Plus size={16} />
-            {isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
-          </button>
+          <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <button
+              onClick={copyWhatsAppSummary}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white lg:w-auto"
+            >
+              <MessageCircle size={16} />
+              {isPt ? 'Resumo WhatsApp' : isEs ? 'Resumen WhatsApp' : 'WhatsApp summary'}
+            </button>
+            <button onClick={openModal} className="btn-primary inline-flex w-full items-center justify-center gap-2 lg:w-auto">
+              <Plus size={16} />
+              {isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -260,7 +307,7 @@ export default function RoundsPage() {
                 {isPt ? 'Liga incompleta' : isEs ? 'Liga incompleta' : 'Incomplete league setup'}
               </p>
               <p className="mt-1 leading-6">
-                {slots.length === 0 && (isPt ? 'Sem horarios. ' : isEs ? 'Sin horarios. ' : 'No time slots. ')}
+                {slots.length === 0 && (isPt ? 'Sem horários. ' : isEs ? 'Sin horarios. ' : 'No time slots. ')}
                 {courts.length === 0 && (isPt ? 'Sem quadras.' : isEs ? 'Sin canchas.' : 'No courts.')}
                 {' '}
                 <button onClick={() => router.push(`/app/leagues/${leagueId}/settings`)} className="font-semibold underline">
@@ -284,12 +331,12 @@ export default function RoundsPage() {
           <p className="text-lg font-bold text-neutral-900">{t('noRounds', locale)}</p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
             {isPt
-              ? 'Crie a primeira rodada para liberar grupos, alocacao de quadras e operacao semanal.'
+              ? 'Crie a primeira rodada para liberar grupos, alocação de quadras e operação semanal.'
               : isEs
-                ? 'Crea la primera jornada para liberar grupos, asignacion de canchas y operacion semanal.'
+                ? 'Crea la primera jornada para liberar grupos, asignación de canchas y operación semanal.'
                 : 'Create the first round to unlock group creation, court allocation, and weekly operations.'}
           </p>
-          <button onClick={openModal} className="btn-primary mt-6 inline-flex items-center gap-2">
+          <button onClick={openModal} className="btn-primary mt-6 inline-flex w-full items-center justify-center gap-2 sm:w-auto">
             <Plus size={16} />
             {isPt ? 'Criar primeira rodada' : isEs ? 'Crear primera jornada' : 'Create first round'}
           </button>
@@ -297,10 +344,18 @@ export default function RoundsPage() {
       ) : (
         <div className="space-y-3">
           {rounds.map((round) => (
-            <button
+            <div
               key={round.id}
               onClick={() => router.push(`/app/leagues/${leagueId}/rounds/${round.id}`)}
-              className="group w-full rounded-[1.7rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-5 text-left shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.28)]"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  router.push(`/app/leagues/${leagueId}/rounds/${round.id}`);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              className="group w-full rounded-[1.7rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-4 text-left shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.28)] sm:p-5"
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex min-w-0 items-center gap-4">
@@ -328,7 +383,7 @@ export default function RoundsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-end">
                   {round.status !== 'closed' && (
                     <button
                       onClick={(event) => {
@@ -343,7 +398,7 @@ export default function RoundsPage() {
                   <ChevronRight size={18} className="text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-teal-600" />
                 </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -364,12 +419,12 @@ export default function RoundsPage() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-[rgba(9,13,24,0.56)] backdrop-blur-md flex items-end justify-center p-4 sm:items-center" onClick={() => setShowModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(9,13,24,0.56)] p-3 backdrop-blur-md sm:items-center sm:p-4" onClick={() => setShowModal(false)}>
           <div
             className="w-full max-w-md overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] shadow-[0_34px_90px_-44px_rgba(15,23,42,0.6)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
+            <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
                   {isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
@@ -384,7 +439,11 @@ export default function RoundsPage() {
               </button>
             </div>
 
-            <div className="space-y-5 px-6 py-6">
+            <div className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
+              <div className="rounded-3xl border border-teal-200/70 bg-teal-500/8 px-4 py-4 text-xs leading-6 text-teal-800">
+                {isPt ? 'Esta estrutura é só o ponto de partida. Data, quadras, grupos e ajustes finos continuam editáveis depois.' : isEs ? 'Esta estructura es solo el punto de partida. Fecha, canchas, grupos y ajustes finos siguen editables después.' : 'This setup is only a starting point. Date, courts, groups, and fine adjustments stay editable later.'}
+              </div>
+
               <div>
                 <label className="label-field">
                   <Calendar size={14} className="mr-1 inline" />
@@ -404,7 +463,7 @@ export default function RoundsPage() {
                       <button
                         key={court.id}
                         onClick={() => toggleCourt(court.id)}
-                        className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                        className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none ${
                           selectedCourts.has(court.id) ? 'bg-emerald-600 text-white shadow-[0_14px_28px_-18px_rgba(5,150,105,0.55)]' : 'bg-neutral-900/5 text-neutral-500 hover:bg-neutral-900/8'
                         }`}
                       >
@@ -427,7 +486,7 @@ export default function RoundsPage() {
                             className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700"
                           >
                             <option value="">
-                              {isPt ? 'Sem quadra fisica' : isEs ? 'Sin cancha fisica' : 'No physical court'}
+                              {isPt ? 'Sem quadra física' : isEs ? 'Sin cancha asignada' : 'No physical court'}
                             </option>
                             {Array.from({ length: league?.physical_courts_count || 0 }, (_, index) => index + 1).map((num) => (
                               <option key={num} value={num}>
@@ -451,9 +510,9 @@ export default function RoundsPage() {
               {slots.length > 0 && (
                 <div className="rounded-3xl bg-neutral-900/5 px-4 py-4 text-xs leading-6 text-neutral-500">
                   {isPt
-                    ? `Todos os jogos nascem com horario inicial em ${slots[0].slot_time}. Depois voce ajusta cada um individualmente na tela da rodada.`
+                    ? `Todos os jogos nascem com horário inicial em ${slots[0].slot_time}. Depois você ajusta cada um individualmente na tela da rodada.`
                     : isEs
-                      ? `Todos los juegos nacen con horario inicial en ${slots[0].slot_time}. Despues ajustas cada uno individualmente en la pantalla de la jornada.`
+                      ? `Todos los juegos nacen con horario inicial en ${slots[0].slot_time}. Después ajustas cada uno individualmente en la pantalla de la jornada.`
                       : `All games start with ${slots[0].slot_time} as the initial time slot. You can adjust each one individually on the round screen.`}
                 </div>
               )}
@@ -461,9 +520,9 @@ export default function RoundsPage() {
               {selectedCourts.size > 0 && (
                 <div className="rounded-3xl bg-neutral-900/5 px-4 py-4 text-xs leading-6 text-neutral-500">
                   {isPt
-                    ? 'A quadra fisica inicial tambem pode ser definida por jogo aqui. Se deixar vazio, voce escolhe depois.'
+                    ? 'A quadra física inicial também pode ser definida por jogo aqui. Se deixar vazio, você escolhe depois.'
                     : isEs
-                      ? 'La cancha fisica inicial tambien puede definirse por juego aqui. Si lo dejas vacio, la eliges despues.'
+                      ? 'La cancha física inicial también puede definirse por partido aquí. Si lo dejas vacío, la eliges después.'
                       : 'The initial physical court can also be set per game here. Leave it empty if you want to choose it later.'}
                 </div>
               )}
@@ -502,7 +561,7 @@ function RoundMetric({ label, value, tone }: {
   }[tone];
 
   return (
-    <div className={`rounded-[1.5rem] border ${toneClass} px-5 py-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.3)]`}>
+    <div className={`rounded-[1.5rem] border ${toneClass} px-4 py-4 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.3)] sm:px-5 sm:py-5`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-500">{label}</p>
       <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-neutral-950">{value}</p>
     </div>

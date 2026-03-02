@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
+import { useToast } from '@/components/ToastProvider';
 import { SkeletonList } from '@/components/Skeleton';
 import { League, Player, Round, RoundPoints, Rules } from '@/types/database';
-import { Trophy, Medal, ChevronLeft, Users, ArrowUp, ArrowDown, Minus, Filter, Activity } from 'lucide-react';
+import { downloadCsv, safeFileName } from '@/lib/clientExport';
+import { Trophy, Medal, ChevronLeft, Users, ArrowUp, ArrowDown, Minus, Filter, Activity, Download } from 'lucide-react';
 
 type RankingEntry = {
   player: Player;
@@ -30,6 +32,7 @@ export default function LeagueRankingPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
   const { user, locale } = useAuth();
   const { db, run } = useDb();
+  const toast = useToast();
   const router = useRouter();
   const isEs = locale === 'es';
   const isPt = locale === 'pt';
@@ -196,10 +199,43 @@ export default function LeagueRankingPage() {
     ? closedRounds[closedRounds.length - 1] || null
     : closedRounds.find((round) => round.id === selectedRoundId) || null;
 
+  const exportRanking = () => {
+    if (entries.length === 0) {
+      toast.warning(isPt ? 'Nao ha ranking para exportar' : isEs ? 'No hay ranking para exportar' : 'No ranking to export');
+      return;
+    }
+
+    const headers = [
+      isPt ? 'Posicao' : isEs ? 'Posicion' : 'Position',
+      isPt ? 'Jogadora' : isEs ? 'Jugadora' : 'Player',
+      isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points',
+      isPt ? 'Delta' : isEs ? 'Delta' : 'Delta',
+      isPt ? 'Movimento' : isEs ? 'Movimiento' : 'Movement',
+      isPt ? 'Status' : isEs ? 'Estado' : 'Status',
+    ];
+
+    const rows = entries.map((entry) => [
+      entry.position,
+      entry.player.full_name,
+      entry.points,
+      entry.pointsDelta,
+      entry.movement ?? (isPt ? 'novo' : isEs ? 'nuevo' : 'new'),
+      entry.player.is_active ? (isPt ? 'Ativa' : isEs ? 'Activa' : 'Active') : (isPt ? 'Inativa' : isEs ? 'Inactiva' : 'Inactive'),
+    ]);
+
+    downloadCsv(
+      `${safeFileName(`${league?.name || 'ranking'}-ranking`)}.csv`,
+      headers,
+      rows
+    );
+
+    toast.success(isPt ? 'Ranking exportado.' : isEs ? 'Ranking exportado.' : 'Ranking exported.');
+  };
+
   if (loading) {
     return (
       <div className="mx-auto max-w-5xl space-y-5">
-        <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)]">
+        <div className="rounded-[2rem] border border-white/70 bg-white/85 p-4 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)] sm:p-6">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-2xl bg-neutral-200 animate-pulse" />
             <div className="space-y-2">
@@ -217,9 +253,10 @@ export default function LeagueRankingPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-4 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)] sm:p-6">
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
-        <div className="relative flex items-start gap-4">
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4">
           <button
             onClick={() => router.push(`/app/leagues/${leagueId}/rounds`)}
             className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/80 text-neutral-500 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.28)] transition hover:text-neutral-800"
@@ -230,13 +267,21 @@ export default function LeagueRankingPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
               {isPt ? 'Classificacao ao vivo' : isEs ? 'Clasificacion en vivo' : 'Live standings'}
             </p>
-            <h1 className="mt-1 text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
+            <h1 className="mt-1 text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
               Ranking
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600 sm:text-[15px]">
-              {league?.name || ''} · {isPt ? 'Comparacao entre cortes, delta de pontos e zonas competitivas.' : isEs ? 'Comparacion entre cortes, delta de puntos y zonas competitivas.' : 'Scope comparison, point deltas, and competitive zones.'}
+              {league?.name || ''}{league?.name ? ' - ' : ''}{isPt ? 'Comparacao entre cortes, delta de pontos e zonas competitivas.' : isEs ? 'Comparacion entre cortes, delta de puntos y zonas competitivas.' : 'Scope comparison, point deltas, and competitive zones.'}
             </p>
           </div>
+          </div>
+          <button
+            onClick={exportRanking}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white sm:w-auto"
+          >
+            <Download size={16} />
+            {isPt ? 'Exportar CSV' : isEs ? 'Exportar CSV' : 'Export CSV'}
+          </button>
         </div>
       </section>
 
@@ -296,7 +341,7 @@ export default function LeagueRankingPage() {
       )}
 
       <div className="card p-4 sm:p-5">
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
               {isPt ? 'Ranking ate' : isEs ? 'Ranking hasta' : 'Ranking through'}
@@ -334,7 +379,7 @@ export default function LeagueRankingPage() {
                 className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700"
               >
                 <option value="prev">{isPt ? 'Recorte anterior' : isEs ? 'Corte anterior' : 'Previous scope'}</option>
-                <option value="none">{isPt ? 'Sem comparacao' : isEs ? 'Sin comparacion' : 'No comparison'}</option>
+                <option value="none">{isPt ? 'Sem comparacao' : isEs ? 'Sin referencia' : 'No comparison'}</option>
                 {closedRounds.map((round) => (
                   <option key={round.id} value={round.id}>
                     {isPt ? `Rodada ${round.number}` : isEs ? `Jornada ${round.number}` : `Round ${round.number}`}
@@ -354,7 +399,7 @@ export default function LeagueRankingPage() {
           <span className="rounded-full bg-teal-500/10 px-2.5 py-1 text-teal-700">
             {comparedRound
               ? (isPt ? `Comparando com rodada ${comparedRound.number}` : isEs ? `Comparando con jornada ${comparedRound.number}` : `Comparing with round ${comparedRound.number}`)
-              : (isPt ? 'Sem base de comparacao' : isEs ? 'Sin base de comparacion' : 'No comparison baseline')}
+              : (isPt ? 'Sem base de comparacao' : isEs ? 'Sin referencia previa' : 'No comparison baseline')}
           </span>
         </div>
       </div>
@@ -365,20 +410,20 @@ export default function LeagueRankingPage() {
             <Trophy size={28} />
           </div>
           <p className="text-lg font-bold text-neutral-900">
-            {isPt ? 'Sem ranking ainda' : isEs ? 'Sin ranking aun' : 'No ranking yet'}
+            {isPt ? 'Sem ranking ainda' : isEs ? 'Sin ranking aún' : 'No ranking yet'}
           </p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
             {isPt
-              ? 'Feche pelo menos uma rodada para consolidar pontos e preencher a classificacao.'
+              ? 'Feche pelo menos uma rodada para consolidar pontos e liberar o ranking.'
               : isEs
-                ? 'Cierra al menos una jornada para consolidar puntos y llenar la clasificacion.'
+                ? 'Cierra al menos una jornada para consolidar puntos y activar la clasificación.'
                 : 'Close at least one round to consolidate points and populate the standings.'}
           </p>
         </div>
       ) : (
         <>
           {podium.length > 0 && (
-            <section className="card p-5 sm:p-6">
+            <section className="card p-4 sm:p-6">
               <div className="mb-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
                   {isPt ? 'Podio' : isEs ? 'Podio' : 'Podium'}
@@ -429,9 +474,9 @@ export default function LeagueRankingPage() {
           {rules && (
             <div className="grid gap-3 lg:grid-cols-2">
               <ZoneCard
-                title={isPt ? 'Zona de promocao' : isEs ? 'Zona de ascenso' : 'Promotion zone'}
+                title={isPt ? 'Zona de promoção' : isEs ? 'Zona de ascenso' : 'Promotion zone'}
                 players={entries.slice(0, Math.max(rules.promotion_count, 0))}
-                emptyLabel={isPt ? 'Nenhuma promocao configurada' : isEs ? 'Sin ascenso configurado' : 'No promotion configured'}
+                emptyLabel={isPt ? 'Nenhuma promoção configurada' : isEs ? 'Sin ascenso configurado' : 'No promotion configured'}
                 locale={locale}
                 tone="emerald"
               />
@@ -482,13 +527,13 @@ export default function LeagueRankingPage() {
                         {entry.isTied && <TieBadge locale={locale} />}
                         {!entry.player.is_active && <InactiveBadge locale={locale} />}
                       </div>
-                      <div className="mt-3 max-w-[220px]">
+                      <div className="mt-3 max-w-full sm:max-w-[220px]">
                         <SparklineBars values={entry.history} tone={entry.player.is_active ? 'teal' : 'neutral'} />
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start sm:gap-4">
                     <div className="rounded-2xl bg-neutral-900/5 px-4 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
                         {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
@@ -515,8 +560,8 @@ export default function LeagueRankingPage() {
             </span>
             <span className="rounded-full bg-neutral-900/5 px-2.5 py-1">
               {comparedRound
-                ? (isPt ? `Base de comparacao: rodada ${comparedRound.number}` : isEs ? `Base de comparacion: jornada ${comparedRound.number}` : `Comparison baseline: round ${comparedRound.number}`)
-                : (isPt ? 'Sem base de comparacao' : isEs ? 'Sin base de comparacion' : 'No comparison baseline')}
+                ? (isPt ? `Base de comparacao: rodada ${comparedRound.number}` : isEs ? `Referencia base: jornada ${comparedRound.number}` : `Comparison baseline: round ${comparedRound.number}`)
+                : (isPt ? 'Sem base de comparacao' : isEs ? 'Sin referencia previa' : 'No comparison baseline')}
             </span>
           </div>
           <div className="sm:ml-auto flex items-center gap-2 text-sm font-semibold text-neutral-500">
@@ -542,7 +587,7 @@ function MetricCard({ label, value, detail, tone }: {
   }[tone];
 
   return (
-    <div className={`rounded-[1.5rem] border ${toneClass} px-5 py-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.3)]`}>
+    <div className={`rounded-[1.5rem] border ${toneClass} px-4 py-4 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.3)] sm:px-5 sm:py-5`}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-500">{label}</p>
       <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-neutral-950">{value}</p>
       <p className="mt-1 text-xs font-medium text-neutral-500">{detail}</p>
@@ -642,7 +687,7 @@ function TieBadge({ locale, compact = false }: { locale: string; compact?: boole
 
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/10 px-2 py-1 text-[11px] font-semibold text-fuchsia-700">
-      {compact ? 'T' : isPt ? 'Empate tecnico' : isEs ? 'Empate tecnico' : 'Technical tie'}
+      {compact ? 'T' : isPt ? 'Empate técnico' : isEs ? 'Empate técnico' : 'Technical tie'}
     </span>
   );
 }
@@ -696,7 +741,7 @@ function ZoneCard({ title, players, emptyLabel, tone, locale }: {
           <p className="text-sm font-medium text-neutral-500">{emptyLabel}</p>
         ) : (
           players.map((entry) => (
-            <div key={entry.player.id} className="flex items-center justify-between rounded-2xl bg-white/70 px-3 py-2">
+            <div key={entry.player.id} className="flex flex-col gap-2 rounded-2xl bg-white/70 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
               <span className="truncate text-sm font-semibold text-neutral-800">
                 #{entry.position} {entry.player.full_name}
               </span>
