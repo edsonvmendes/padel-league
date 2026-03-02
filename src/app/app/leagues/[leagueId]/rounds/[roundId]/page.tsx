@@ -1050,17 +1050,6 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                           className={`w-full rounded-xl py-1.5 text-xs font-semibold ${ATTENDANCE_BTN[cp.attendance] || ''}`}>
                           {attendanceLabel(cp.attendance)}
                         </button>
-                        {toWhatsAppPhone(parsePlayerContact(cp.playerData?.notes).phone) && (
-                          <button onClick={() => remindPlayer(cp)}
-                            className="text-[10px] text-neutral-400 hover:text-emerald-600 flex items-center justify-center gap-0.5">
-                            <Bell size={10} />
-                            {cp.attendance === 'absent'
-                              ? (isPt ? 'confirmar falta' : isEs ? 'confirmar falta' : 'confirm absence')
-                              : cp.attendance === 'substitute'
-                                ? (isPt ? 'chamar sub' : isEs ? 'llamar suplente' : 'call sub')
-                              : (isPt ? 'confirmar presenca' : isEs ? 'confirmar asistencia' : 'confirm attendance')}
-                          </button>
-                        )}
                         {cp.attendance !== 'present' && (
                           <input
                             type="text"
@@ -1113,49 +1102,6 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
           <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
             <AlertTriangle size={15} />
             {isPt ? `${4 - g.players.length} jogadoras faltando` : isEs ? `Faltan ${4 - g.players.length} jugadoras` : `${4 - g.players.length} players missing`}
-          </div>
-        </div>
-      )}
-
-      {attendanceIssues.length > 0 && (
-        <div className="px-5 pb-4">
-          <div className="space-y-2">
-            {absentIssues.length > 0 && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button
-                  onClick={() => copyIssueMessage('absent')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
-                >
-                  <MessageCircle size={15} />
-                  {isPt ? 'Copiar ausentes' : isEs ? 'Copiar ausentes' : 'Copy absences'}
-                </button>
-                <button
-                  onClick={() => openIssueWhatsApp('absent')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"
-                >
-                  <MessageCircle size={15} />
-                  {isPt ? 'Cobrar ausentes' : isEs ? 'Pedir asistencia' : 'Follow up absences'}
-                </button>
-              </div>
-            )}
-            {substituteIssues.length > 0 && (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button
-                  onClick={() => copyIssueMessage('substitute')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
-                >
-                  <MessageCircle size={15} />
-                  {isPt ? 'Copiar substitutas' : isEs ? 'Copiar suplentes' : 'Copy substitutes'}
-                </button>
-                <button
-                  onClick={() => openIssueWhatsApp('substitute')}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
-                >
-                  <MessageCircle size={15} />
-                  {isPt ? 'Chamar substitutas' : isEs ? 'Llamar suplentes' : 'Contact substitutes'}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
