@@ -36,15 +36,15 @@ export default function LoginPage() {
 
       <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl items-center">
         <div className="grid w-full gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <section className="hidden lg:flex flex-col justify-between rounded-[2rem] border border-white/10 bg-white/5 p-10 text-white backdrop-blur-xl">
+          <section className="hidden lg:flex flex-col justify-between rounded-[2rem] border border-white/10 bg-[linear-gradient(165deg,rgba(6,19,25,0.78),rgba(10,29,36,0.62))] p-10 text-white backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
             <div className="space-y-8">
               <BrandMark withWordmark size="lg" />
               <div className="space-y-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-300/90">Padel Operations</p>
-                <h1 className="max-w-xl text-5xl font-black leading-[0.96] tracking-[-0.04em]">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-amber-200/80">Padel Operations</p>
+                <h1 className="max-w-xl text-5xl font-black leading-[0.96] tracking-[-0.04em] text-white/90">
                   Gestão de liga com presença de produto premium.
                 </h1>
-                <p className="max-w-lg text-base leading-7 text-white/72">
+                <p className="max-w-lg text-base leading-7 text-white/64">
                   Centralize rodadas, jogadoras, configurações e operação semanal em uma experiência limpa,
                   rápida e com aparência de software sério.
                 </p>
@@ -53,16 +53,16 @@ export default function LoginPage() {
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                <p className="text-3xl font-black">12</p>
-                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/55">Rodadas por temporada</p>
+                <p className="text-3xl font-black text-white/88">12</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/48">Rodadas por temporada</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                <p className="text-3xl font-black">4x</p>
-                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/55">Menos retrabalho manual</p>
+                <p className="text-3xl font-black text-white/88">4x</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/48">Menos retrabalho manual</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
-                <p className="text-3xl font-black">1</p>
-                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/55">Base operacional única</p>
+                <p className="text-3xl font-black text-white/88">1</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-white/48">Base operacional única</p>
               </div>
             </div>
           </section>

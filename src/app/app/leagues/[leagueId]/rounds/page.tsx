@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList } from '@/components/Skeleton';
 import { Round, League, LeagueTimeSlot, Court } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { Plus, Calendar, ChevronRight, X, Clock, Grid3X3, Lock, PlayCircle, AlertCircle } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Clock, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy } from 'lucide-react';
 
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -18,66 +18,75 @@ export default function RoundsPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
-  const isEs = locale === 'es'; const isPt = locale === 'pt';
+  const isEs = locale === 'es';
+  const isPt = locale === 'pt';
 
   const [league, setLeague] = useState<League | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [slots, setSlots] = useState<LeagueTimeSlot[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Modal de criação
   const [showModal, setShowModal] = useState(false);
   const [modalDate, setModalDate] = useState('');
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [selectedCourts, setSelectedCourts] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => { if (user) loadAll(); }, [user, leagueId]);
+  useEffect(() => {
+    if (user) loadAll();
+  }, [user, leagueId]);
 
   const loadAll = async () => {
-    const [{ data: l }, { data: r }, { data: s }, { data: c }] = await Promise.all([
+    const [{ data: leagueData }, { data: roundData }, { data: slotData }, { data: courtData }] = await Promise.all([
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
       run(() => db.from('rounds').select('*').eq('league_id', leagueId).order('number')),
       run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
       run(() => db.from('courts').select('*').eq('league_id', leagueId).order('court_number')),
     ]);
-    setLeague(l);
-    setRounds(r || []);
-    setSlots(s || []);
-    setCourts(c || []);
+
+    setLeague(leagueData);
+    setRounds(roundData || []);
+    setSlots(slotData || []);
+    setCourts(courtData || []);
     setLoading(false);
   };
 
   const openModal = () => {
-    // Pré-preenche data: próxima ocorrência do weekday da liga
     if (league?.weekday) {
-      const WEEKDAY_MAP: Record<string, number> = {
-        Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
-        Thursday: 4, Friday: 5, Saturday: 6,
+      const weekdayMap: Record<string, number> = {
+        Sunday: 0,
+        Monday: 1,
+        Tuesday: 2,
+        Wednesday: 3,
+        Thursday: 4,
+        Friday: 5,
+        Saturday: 6,
       };
-      const target = WEEKDAY_MAP[league.weekday] ?? 4;
+
+      const target = weekdayMap[league.weekday] ?? 4;
       const now = new Date();
       const diff = (target - now.getDay() + 7) % 7 || 7;
       const next = new Date(now);
       next.setDate(now.getDate() + diff);
       setModalDate(next.toISOString().split('T')[0]);
     }
-    // Seleciona todos por default
-    setSelectedSlots(new Set(slots.map(s => s.id)));
-    setSelectedCourts(new Set(courts.map(c => c.id)));
+
+    setSelectedSlots(new Set(slots.map((slot) => slot.id)));
+    setSelectedCourts(new Set(courts.map((court) => court.id)));
     setShowModal(true);
   };
 
-  const toggleSlot = (id: string) => setSelectedSlots(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
+  const toggleSlot = (id: string) => setSelectedSlots((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     return next;
   });
 
-  const toggleCourt = (id: string) => setSelectedCourts(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
+  const toggleCourt = (id: string) => setSelectedCourts((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     return next;
   });
 
@@ -89,8 +98,8 @@ export default function RoundsPage() {
         isPt
           ? 'Configure horarios e quadras antes de criar a rodada'
           : isEs
-          ? 'Configura horarios y canchas antes de crear la jornada'
-          : 'Configure time slots and courts before creating a round'
+            ? 'Configura horarios y canchas antes de crear la jornada'
+            : 'Configure time slots and courts before creating a round'
       );
       router.push(`/app/leagues/${leagueId}/settings`);
       return;
@@ -100,281 +109,371 @@ export default function RoundsPage() {
       toast.warning(isPt ? 'Selecione uma data' : isEs ? 'Selecciona una fecha' : 'Select a date');
       return;
     }
+
     setCreating(true);
 
-    const nextNumber = rounds.length > 0 ? Math.max(...rounds.map(r => r.number)) + 1 : 1;
+    try {
+      const nextNumber = rounds.length > 0 ? Math.max(...rounds.map((round) => round.number)) + 1 : 1;
 
-    const newRound = await runOrThrow(
-      () => db.from('rounds').insert({
-        league_id: leagueId,
-        number: nextNumber,
-        round_date: modalDate,
-        status: 'draft',
-      }).select().single(),
-      isPt ? 'Erro ao criar rodada' : isEs ? 'Error al crear jornada' : 'Failed to create round'
-    );
-
-    if (!newRound) { setCreating(false); return; }
-    const round = newRound as any;
-
-    // Criar grupos para cada combinação slot × court selecionados
-    if (groupCount > 0) {
-      const activeSlots = slots.filter(s => selectedSlots.has(s.id));
-      const activeCourts = courts.filter(c => selectedCourts.has(c.id));
-      const groups = activeSlots.flatMap(s => activeCourts.map(c => ({
-        round_id: round.id,
-        league_id: leagueId,
-        time_slot_id: s.id,
-        court_id: c.id,
-        is_cancelled: false,
-      })));
-      await runOrThrow(
-        () => db.from('round_court_groups').insert(groups),
-        isPt ? 'Erro ao criar grupos da rodada' : isEs ? 'Error al crear grupos de la jornada' : 'Failed to create round groups'
+      const newRound = await runOrThrow(
+        () => db.from('rounds').insert({
+          league_id: leagueId,
+          number: nextNumber,
+          round_date: modalDate,
+          status: 'draft',
+        }).select().single(),
+        isPt ? 'Erro ao criar rodada' : isEs ? 'Error al crear jornada' : 'Failed to create round'
       );
-    }
 
-    setCreating(false);
-    setShowModal(false);
-    toast.success(isPt ? `Rodada ${nextNumber} criada!` : isEs ? `¡Jornada ${nextNumber} creada!` : `Round ${nextNumber} created!`);
-    router.push(`/app/leagues/${leagueId}/rounds/${round.id}`);
+      if (!newRound) return;
+
+      if (groupCount > 0) {
+        const activeSlots = slots.filter((slot) => selectedSlots.has(slot.id));
+        const activeCourts = courts.filter((court) => selectedCourts.has(court.id));
+        const groups = activeSlots.flatMap((slot) => activeCourts.map((court) => ({
+          round_id: newRound.id,
+          league_id: leagueId,
+          time_slot_id: slot.id,
+          court_id: court.id,
+          is_cancelled: false,
+        })));
+
+        await runOrThrow(
+          () => db.from('round_court_groups').insert(groups),
+          isPt ? 'Erro ao criar grupos da rodada' : isEs ? 'Error al crear grupos de la jornada' : 'Failed to create round groups'
+        );
+      }
+
+      setShowModal(false);
+      toast.success(isPt ? `Rodada ${nextNumber} criada!` : isEs ? `Jornada ${nextNumber} creada!` : `Round ${nextNumber} created!`);
+      router.push(`/app/leagues/${leagueId}/rounds/${newRound.id}`);
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleDeleteRound = async (r: Round) => {
-    if (r.status === 'closed') {
-      toast.warning(isPt ? 'Rodadas fechadas não podem ser excluídas' : isEs ? 'No se pueden eliminar jornadas cerradas' : 'Closed rounds cannot be deleted');
+  const handleDeleteRound = async (round: Round) => {
+    if (round.status === 'closed') {
+      toast.warning(isPt ? 'Rodadas fechadas nao podem ser excluidas' : isEs ? 'No se pueden eliminar jornadas cerradas' : 'Closed rounds cannot be deleted');
       return;
     }
+
     const ok = await confirm({
-      title: isPt ? `Excluir Rodada ${r.number}` : isEs ? `Eliminar Jornada ${r.number}` : `Delete Round ${r.number}`,
-      message: isPt ? 'Todos os grupos e resultados serão perdidos.' : isEs ? 'Todos los grupos y resultados se perderán.' : 'All groups and results will be lost.',
+      title: isPt ? `Excluir Rodada ${round.number}` : isEs ? `Eliminar Jornada ${round.number}` : `Delete Round ${round.number}`,
+      message: isPt ? 'Todos os grupos e resultados serao perdidos.' : isEs ? 'Todos los grupos y resultados se perderan.' : 'All groups and results will be lost.',
       confirmLabel: isPt ? 'Excluir' : isEs ? 'Eliminar' : 'Delete',
       cancelLabel: isPt ? 'Cancelar' : isEs ? 'Cancelar' : 'Cancel',
       variant: 'danger',
     });
+
     if (!ok) return;
+
     await runOrThrow(
-      () => db.from('rounds').delete().eq('id', r.id),
+      () => db.from('rounds').delete().eq('id', round.id),
       isPt ? 'Erro ao excluir rodada' : isEs ? 'Error al eliminar jornada' : 'Failed to delete round'
     );
-    toast.success(isPt ? 'Rodada excluída' : isEs ? 'Jornada eliminada' : 'Round deleted');
+
+    toast.success(isPt ? 'Rodada excluida' : isEs ? 'Jornada eliminada' : 'Round deleted');
     loadAll();
   };
 
-  const fmtDate = (d: string) => {
-    const locale_str = isPt ? 'pt-BR' : isEs ? 'es-ES' : 'en-US';
-    return new Date(d + 'T12:00:00').toLocaleDateString(locale_str, {
-      weekday: 'short', day: 'numeric', month: 'short',
+  const fmtDate = (value: string) => {
+    const localeString = isPt ? 'pt-BR' : isEs ? 'es-ES' : 'en-US';
+    return new Date(`${value}T12:00:00`).toLocaleDateString(localeString, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
     });
   };
 
-  const STATUS_BADGE: Record<string, string> = {
-    draft:   'bg-neutral-100 text-neutral-600',
-    running: 'bg-blue-100 text-blue-700',
-    closed:  'bg-emerald-100 text-emerald-700',
+  const statusBadge: Record<string, string> = {
+    draft: 'bg-neutral-900/5 text-neutral-500 ring-1 ring-neutral-900/6',
+    running: 'bg-sky-500/12 text-sky-700 ring-1 ring-sky-500/10',
+    closed: 'bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/10',
   };
-  const STATUS_LABEL = (s: string) => {
-    if (s === 'draft')   return isPt ? 'Rascunho' : isEs ? 'Borrador' : 'Draft';
-    if (s === 'running') return isPt ? 'Em andamento' : isEs ? 'En curso' : 'In progress';
+
+  const statusLabel = (status: string) => {
+    if (status === 'draft') return isPt ? 'Rascunho' : isEs ? 'Borrador' : 'Draft';
+    if (status === 'running') return isPt ? 'Em andamento' : isEs ? 'En curso' : 'In progress';
     return isPt ? 'Fechada' : isEs ? 'Cerrada' : 'Closed';
   };
-  const STATUS_ICON = (s: string) => {
-    if (s === 'running') return <PlayCircle size={13} />;
-    if (s === 'closed')  return <Lock size={13} />;
+
+  const statusIcon = (status: string) => {
+    if (status === 'running') return <PlayCircle size={13} />;
+    if (status === 'closed') return <Lock size={13} />;
     return null;
   };
 
+  const closedCount = rounds.filter((round) => round.status === 'closed').length;
+  const runningCount = rounds.filter((round) => round.status === 'running').length;
+  const draftCount = rounds.filter((round) => round.status === 'draft').length;
+
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-xl font-bold text-neutral-800">{t('rounds', locale)}</h1>
-          {league && <p className="text-sm text-neutral-500">{league.name}</p>}
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(245,158,11,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+        <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl space-y-3">
+            <span className="inline-flex items-center rounded-full bg-neutral-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white">
+              {isPt ? 'Agenda operacional' : isEs ? 'Agenda operativa' : 'Round calendar'}
+            </span>
+            <div>
+              <h1 className="text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{t('rounds', locale)}</h1>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-600 sm:text-[15px]">
+                {league?.name ? league.name : ''}
+                {league?.name ? ' · ' : ''}
+                {isPt
+                  ? 'Controle abertura, progresso e historico de rodadas com visao clara de capacidade e status.'
+                  : isEs
+                    ? 'Controla apertura, progreso e historial de jornadas con una lectura clara de capacidad y estado.'
+                    : 'Track launch, progress, and round history with a clear read on capacity and status.'}
+              </p>
+            </div>
+          </div>
+
+          <button onClick={openModal} className="btn-primary inline-flex items-center gap-2 self-start lg:self-auto">
+            <Plus size={16} />
+            {isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
+          </button>
         </div>
-        <button onClick={openModal} className="btn-primary flex items-center gap-1.5">
-          <Plus size={16} />
-          {isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
-        </button>
+      </section>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+        <RoundMetric label={isPt ? 'Total' : isEs ? 'Total' : 'Total'} value={rounds.length} tone="teal" />
+        <RoundMetric label={isPt ? 'Fechadas' : isEs ? 'Cerradas' : 'Closed'} value={closedCount} tone="emerald" />
+        <RoundMetric label={isPt ? 'Em andamento' : isEs ? 'En curso' : 'Running'} value={runningCount} tone="sky" />
+        <RoundMetric label={isPt ? 'Rascunho' : isEs ? 'Borrador' : 'Draft'} value={draftCount} tone="neutral" />
       </div>
 
-      {/* Aviso se liga não tem slots ou courts */}
       {!loading && (slots.length === 0 || courts.length === 0) && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-start gap-3">
-          <AlertCircle size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-800">
-            <p className="font-semibold mb-0.5">
-              {isPt ? 'Liga incompleta' : isEs ? 'Liga incompleta' : 'Incomplete league setup'}
-            </p>
-            <p>
-              {slots.length === 0 && (isPt ? 'Sem horários. ' : isEs ? 'Sin horarios. ' : 'No time slots. ')}
-              {courts.length === 0 && (isPt ? 'Sem quadras.' : isEs ? 'Sin canchas.' : 'No courts.')}
-              {' '}
-              <button onClick={() => router.push(`/app/leagues/${leagueId}/settings`)}
-                className="underline font-semibold">
-                {isPt ? 'Configurar →' : isEs ? 'Configurar →' : 'Configure →'}
-              </button>
-            </p>
+        <div className="rounded-[1.6rem] border border-amber-200 bg-amber-50/90 p-4 shadow-[0_18px_34px_-30px_rgba(180,83,9,0.28)]">
+          <div className="flex items-start gap-3">
+            <AlertCircle size={18} className="mt-0.5 flex-shrink-0 text-amber-600" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold">
+                {isPt ? 'Liga incompleta' : isEs ? 'Liga incompleta' : 'Incomplete league setup'}
+              </p>
+              <p className="mt-1 leading-6">
+                {slots.length === 0 && (isPt ? 'Sem horarios. ' : isEs ? 'Sin horarios. ' : 'No time slots. ')}
+                {courts.length === 0 && (isPt ? 'Sem quadras.' : isEs ? 'Sin canchas.' : 'No courts.')}
+                {' '}
+                <button onClick={() => router.push(`/app/leagues/${leagueId}/settings`)} className="font-semibold underline">
+                  {isPt ? 'Configurar agora' : isEs ? 'Configurar ahora' : 'Configure now'}
+                </button>
+              </p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* List */}
       {loading ? (
-        <SkeletonList count={3} lines={1} />
+        <div className="card p-5 sm:p-6">
+          <SkeletonList count={4} lines={1} />
+        </div>
       ) : rounds.length === 0 ? (
-        <div className="card p-12 text-center">
-          <Calendar size={40} className="text-neutral-200 mx-auto mb-3" />
-          <p className="text-neutral-500 mb-4">{t('noRounds', locale)}</p>
-          <button onClick={openModal} className="btn-primary inline-flex items-center gap-2">
+        <div className="card p-10 sm:p-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-[0_18px_38px_-22px_rgba(13,148,136,0.75)]">
+            <Calendar size={28} />
+          </div>
+          <p className="text-lg font-bold text-neutral-900">{t('noRounds', locale)}</p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
+            {isPt
+              ? 'Crie a primeira rodada para liberar grupos, alocacao de quadras e operacao semanal.'
+              : isEs
+                ? 'Crea la primera jornada para liberar grupos, asignacion de canchas y operacion semanal.'
+                : 'Create the first round to unlock group creation, court allocation, and weekly operations.'}
+          </p>
+          <button onClick={openModal} className="btn-primary mt-6 inline-flex items-center gap-2">
             <Plus size={16} />
             {isPt ? 'Criar primeira rodada' : isEs ? 'Crear primera jornada' : 'Create first round'}
           </button>
         </div>
       ) : (
-        <div className="space-y-2">
-          {rounds.map(r => (
-            <button key={r.id}
-              onClick={() => router.push(`/app/leagues/${leagueId}/rounds/${r.id}`)}
-              className="card-hover w-full p-4 flex items-center justify-between text-left">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-extrabold text-lg flex-shrink-0 ${
-                  r.status === 'running' ? 'bg-blue-600 text-white' :
-                  r.status === 'closed'  ? 'bg-emerald-600 text-white' :
-                  'bg-neutral-200 text-neutral-500'
-                }`}>
-                  {r.number}
+        <div className="space-y-3">
+          {rounds.map((round) => (
+            <button
+              key={round.id}
+              onClick={() => router.push(`/app/leagues/${leagueId}/rounds/${round.id}`)}
+              className="group w-full rounded-[1.7rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-5 text-left shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.28)]"
+            >
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex min-w-0 items-center gap-4">
+                  <div className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl text-lg font-black shadow-[0_18px_36px_-24px_rgba(15,23,42,0.28)] ${
+                    round.status === 'running'
+                      ? 'bg-sky-600 text-white'
+                      : round.status === 'closed'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-neutral-900/8 text-neutral-500'
+                  }`}>
+                    {round.number}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-bold text-neutral-900">
+                        {isPt ? `Rodada ${round.number}` : isEs ? `Jornada ${round.number}` : `Round ${round.number}`}
+                      </p>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadge[round.status]}`}>
+                        {statusIcon(round.status)}
+                        {statusLabel(round.status)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-medium text-neutral-500">{fmtDate(round.round_date)}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-neutral-800 text-sm">
-                    {isPt ? `Rodada ${r.number}` : isEs ? `Jornada ${r.number}` : `Round ${r.number}`}
-                  </p>
-                  <p className="text-xs text-neutral-400">{fmtDate(r.round_date)}</p>
+
+                <div className="flex items-center justify-end gap-2">
+                  {round.status !== 'closed' && (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteRound(round);
+                      }}
+                      className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
+                    >
+                      <X size={15} />
+                    </button>
+                  )}
+                  <ChevronRight size={18} className="text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-teal-600" />
                 </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold ${STATUS_BADGE[r.status]}`}>
-                  {STATUS_ICON(r.status)}
-                  {STATUS_LABEL(r.status)}
-                </span>
-                {r.status !== 'closed' && (
-                  <button
-                    onClick={e => { e.stopPropagation(); handleDeleteRound(r); }}
-                    className="p-1.5 text-neutral-300 hover:text-red-500 rounded-lg hover:bg-red-50 transition">
-                    <X size={14} />
-                  </button>
-                )}
-                <ChevronRight size={16} className="text-neutral-300" />
               </div>
             </button>
           ))}
         </div>
       )}
 
-      {/* Sumário de progresso */}
       {!loading && rounds.length > 0 && (
-        <div className="mt-5 flex gap-4 text-xs text-neutral-400 font-medium">
-          <span>{rounds.filter(r => r.status === 'closed').length} {isPt ? 'fechadas' : isEs ? 'cerradas' : 'closed'}</span>
-          <span>{rounds.filter(r => r.status === 'running').length} {isPt ? 'em andamento' : isEs ? 'en curso' : 'in progress'}</span>
-          <span>{rounds.filter(r => r.status === 'draft').length} {isPt ? 'rascunho' : isEs ? 'borrador' : 'draft'}</span>
-          <span className="ml-auto">{league?.rounds_count ? `${rounds.length} / ${league.rounds_count}` : ''}</span>
+        <div className="card p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-neutral-500">
+              <span className="rounded-full bg-neutral-900/5 px-2.5 py-1">{closedCount} {isPt ? 'fechadas' : isEs ? 'cerradas' : 'closed'}</span>
+              <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-sky-700">{runningCount} {isPt ? 'em andamento' : isEs ? 'en curso' : 'running'}</span>
+              <span className="rounded-full bg-neutral-900/5 px-2.5 py-1">{draftCount} {isPt ? 'rascunho' : isEs ? 'borrador' : 'draft'}</span>
+            </div>
+            <div className="sm:ml-auto text-sm font-semibold text-neutral-500">
+              {league?.rounds_count ? `${rounds.length} / ${league.rounds_count}` : ''}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Modal criar rodada */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
-          onClick={() => setShowModal(false)}>
-          <div className="card w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b border-neutral-100">
-              <h2 className="font-bold text-neutral-800 text-base">
-                {isPt ? 'Nova Rodada' : isEs ? 'Nueva Jornada' : 'New Round'}
-                {rounds.length > 0 && (
-                  <span className="ml-2 text-neutral-400 font-normal text-sm">
-                    #{Math.max(...rounds.map(r => r.number)) + 1}
-                  </span>
-                )}
-              </h2>
-              <button onClick={() => setShowModal(false)} className="text-neutral-400 hover:text-neutral-600">
-                <X size={20} />
+        <div className="fixed inset-0 z-50 bg-[rgba(9,13,24,0.56)] backdrop-blur-md flex items-end justify-center p-4 sm:items-center" onClick={() => setShowModal(false)}>
+          <div
+            className="w-full max-w-md overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] shadow-[0_34px_90px_-44px_rgba(15,23,42,0.6)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
+                  {isPt ? 'Nova rodada' : isEs ? 'Nueva jornada' : 'New round'}
+                </p>
+                <h2 className="mt-1 text-lg font-bold text-neutral-900">
+                  {isPt ? 'Criar estrutura' : isEs ? 'Crear estructura' : 'Build round'}
+                  {rounds.length > 0 && <span className="ml-2 text-sm font-normal text-neutral-400">#{Math.max(...rounds.map((round) => round.number)) + 1}</span>}
+                </h2>
+              </div>
+              <button onClick={() => setShowModal(false)} className="rounded-2xl p-2 text-neutral-400 transition hover:bg-neutral-900/5 hover:text-neutral-700">
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-5 space-y-5">
-              {/* Data */}
+            <div className="space-y-5 px-6 py-6">
               <div>
                 <label className="label-field">
-                  <Calendar size={14} className="inline mr-1" />
+                  <Calendar size={14} className="mr-1 inline" />
                   {isPt ? 'Data da rodada' : isEs ? 'Fecha de la jornada' : 'Round date'}
                 </label>
-                <input type="date" className="input-field"
-                  value={modalDate} onChange={e => setModalDate(e.target.value)} />
+                <input type="date" className="input-field" value={modalDate} onChange={(event) => setModalDate(event.target.value)} />
               </div>
 
-              {/* Horários */}
               {slots.length > 0 && (
                 <div>
                   <label className="label-field">
-                    <Clock size={14} className="inline mr-1" />
-                    {isPt ? 'Horários' : isEs ? 'Horarios' : 'Time slots'}
+                    <Clock size={14} className="mr-1 inline" />
+                    {isPt ? 'Horarios' : isEs ? 'Horarios' : 'Time slots'}
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {slots.map(s => (
-                      <button key={s.id} onClick={() => toggleSlot(s.id)}
-                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                          selectedSlots.has(s.id)
-                            ? 'bg-teal-600 text-white shadow-sm'
-                            : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-                        }`}>
-                        {s.slot_time}
+                    {slots.map((slot) => (
+                      <button
+                        key={slot.id}
+                        onClick={() => toggleSlot(slot.id)}
+                        className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                          selectedSlots.has(slot.id) ? 'bg-neutral-900 text-white shadow-[0_14px_28px_-18px_rgba(15,23,42,0.7)]' : 'bg-neutral-900/5 text-neutral-500 hover:bg-neutral-900/8'
+                        }`}
+                      >
+                        {slot.slot_time}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Quadras */}
               {courts.length > 0 && (
                 <div>
                   <label className="label-field">
-                    <Grid3X3 size={14} className="inline mr-1" />
+                    <Grid3X3 size={14} className="mr-1 inline" />
                     {isPt ? 'Quadras' : isEs ? 'Canchas' : 'Courts'}
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {courts.map(c => (
-                      <button key={c.id} onClick={() => toggleCourt(c.id)}
-                        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                          selectedCourts.has(c.id)
-                            ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
-                        }`}>
-                        {isPt ? `Nível ${c.court_number}` : isEs ? `Nivel ${c.court_number}` : `Level ${c.court_number}`}
+                    {courts.map((court) => (
+                      <button
+                        key={court.id}
+                        onClick={() => toggleCourt(court.id)}
+                        className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                          selectedCourts.has(court.id) ? 'bg-emerald-600 text-white shadow-[0_14px_28px_-18px_rgba(5,150,105,0.55)]' : 'bg-neutral-900/5 text-neutral-500 hover:bg-neutral-900/8'
+                        }`}
+                      >
+                        {isPt ? `Nivel ${court.court_number}` : isEs ? `Nivel ${court.court_number}` : `Level ${court.court_number}`}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Resumo */}
-              <div className={`rounded-xl p-3 text-sm font-medium text-center ${
-                groupCount > 0 ? 'bg-teal-50 text-teal-700' : 'bg-neutral-50 text-neutral-500'
-              }`}>
+              <div className={`rounded-3xl px-4 py-4 text-sm font-semibold ${groupCount > 0 ? 'bg-teal-500/10 text-teal-700 ring-1 ring-teal-500/12' : 'bg-neutral-900/5 text-neutral-500 ring-1 ring-neutral-900/6'}`}>
                 {groupCount > 0
-                  ? `${isPt ? '→' : '→'} ${groupCount} ${isPt ? 'grupos serão criados' : isEs ? 'grupos se crearán' : 'groups will be created'} (${selectedSlots.size} × ${selectedCourts.size})`
-                  : isPt ? 'Nenhum grupo será criado' : isEs ? 'No se crearán grupos' : 'No groups will be created'}
+                  ? `${groupCount} ${isPt ? 'grupos serao criados' : isEs ? 'grupos se crearan' : 'groups will be created'} (${selectedSlots.size} x ${selectedCourts.size})`
+                  : isPt ? 'Nenhum grupo sera criado' : isEs ? 'No se crearan grupos' : 'No groups will be created'}
               </div>
 
-              <button onClick={createRound} disabled={creating || !modalDate}
-                className="btn-primary w-full flex items-center justify-center gap-2">
-                {creating
-                  ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Criando...' : isEs ? 'Creando...' : 'Creating...'}</>
-                  : <><Plus size={16} />{isPt ? 'Criar rodada' : isEs ? 'Crear jornada' : 'Create round'}</>}
+              <button onClick={createRound} disabled={creating || !modalDate} className="btn-primary flex w-full items-center justify-center gap-2">
+                {creating ? (
+                  <>
+                    <span className="inline-block h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    {isPt ? 'Criando...' : isEs ? 'Creando...' : 'Creating...'}
+                  </>
+                ) : (
+                  <>
+                    <Plus size={16} />
+                    {isPt ? 'Criar rodada' : isEs ? 'Crear jornada' : 'Create round'}
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function RoundMetric({ label, value, tone }: {
+  label: string;
+  value: number;
+  tone: 'teal' | 'emerald' | 'sky' | 'neutral';
+}) {
+  const toneClass = {
+    teal: 'bg-teal-500/10 border-teal-200/70',
+    emerald: 'bg-emerald-500/10 border-emerald-200/70',
+    sky: 'bg-sky-500/10 border-sky-200/70',
+    neutral: 'bg-neutral-900/5 border-neutral-900/6',
+  }[tone];
+
+  return (
+    <div className={`rounded-[1.5rem] border ${toneClass} px-5 py-5 shadow-[0_18px_40px_-34px_rgba(15,23,42,0.3)]`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-500">{label}</p>
+      <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-neutral-950">{value}</p>
     </div>
   );
 }
