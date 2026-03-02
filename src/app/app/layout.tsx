@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { t } from '@/lib/i18n';
 import { BrandMark } from '@/components/BrandMark';
-import { Home, Users, Calendar, Trophy, Settings, LogOut, Menu, X, Shield } from 'lucide-react';
+import { Home, Users, Calendar, Settings, LogOut, Menu, X } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -49,16 +49,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     ? [
         { label: t('players', locale),  href: `/app/leagues/${leagueId}/players`,  icon: <Users size={20} /> },
         { label: t('rounds', locale),   href: `/app/leagues/${leagueId}/rounds`,   icon: <Calendar size={20} /> },
-        { label: t('ranking', locale),  href: `/app/leagues/${leagueId}/ranking`,  icon: <Trophy size={20} /> },
         { label: t('settings', locale), href: `/app/leagues/${leagueId}/settings`, icon: <Settings size={20} /> },
       ]
     : [];
-
-  const adminNav: NavItem[] = profile?.role === 'admin'
-    ? [{ label: t('adminRules', locale), href: '/app/admin/rules', icon: <Shield size={20} />, adminOnly: true }]
-    : [];
-
-  const allNav = [...mainNav, ...leagueNav, ...adminNav];
+  const allNav = [...mainNav, ...leagueNav];
 
   const isActive = (href: string) => {
     if (href === '/app') return pathname === '/app';
@@ -81,7 +75,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         { label: t('dashboard', locale), href: '/app',                                  icon: <Home size={18} /> },
         { label: t('players', locale),   href: `/app/leagues/${leagueId}/players`,      icon: <Users size={18} /> },
         { label: t('rounds', locale),    href: `/app/leagues/${leagueId}/rounds`,       icon: <Calendar size={18} /> },
-        { label: t('ranking', locale),   href: `/app/leagues/${leagueId}/ranking`,      icon: <Trophy size={18} /> },
         { label: t('settings', locale),  href: `/app/leagues/${leagueId}/settings`,     icon: <Settings size={18} /> },
       ]
     : [
@@ -92,14 +85,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen app-bg">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-white border-r border-neutral-200">
+      <aside className="hidden lg:flex lg:flex-col lg:w-72 lg:fixed lg:inset-y-4 lg:left-4 rounded-[2rem] border border-white/40 bg-white/75 backdrop-blur-xl shadow-[0_24px_60px_rgba(8,20,26,0.10)]">
         {/* Brand */}
-        <div className="p-5 border-b border-neutral-200">
+        <div className="p-6 border-b border-black/5">
           <BrandMark withWordmark />
         </div>
 
         {/* Nav sections */}
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+        <nav className="flex-1 py-5 px-4 space-y-1 overflow-y-auto">
           {/* Main */}
           {mainNav.map(item => (
             <NavButton key={item.href} item={item} active={isActive(item.href)} onClick={() => handleNav(item.href)} />
@@ -119,21 +112,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </>
           )}
 
-          {/* Admin */}
-          {adminNav.length > 0 && (
-            <>
-              <div className="pt-3 pb-1 px-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">Admin</p>
-              </div>
-              {adminNav.map(item => (
-                <NavButton key={item.href} item={item} active={isActive(item.href)} onClick={() => handleNav(item.href)} />
-              ))}
-            </>
-          )}
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-neutral-200 space-y-3">
+        <div className="p-5 border-t border-black/5 space-y-3">
           <div className="flex gap-2">
             <button onClick={() => setLocale('en')}
               className={`flex-1 px-2 py-1 rounded text-xs font-medium ${locale === 'en' ? 'bg-teal-600 text-white' : 'bg-neutral-100 text-neutral-500'}`}>
@@ -158,7 +140,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 bg-white border-b border-neutral-200 flex items-center justify-between px-4 z-40">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-14 border-b border-black/5 bg-[rgba(255,251,244,0.86)] backdrop-blur-xl flex items-center justify-between px-4 z-40">
         <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 -ml-2 text-neutral-600">
           {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
@@ -189,8 +171,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       {/* Main content */}
-      <main className="lg:ml-64 pt-14 lg:pt-0 pb-20 lg:pb-6 min-h-screen">
-        <div className="max-w-5xl mx-auto px-4 py-6">
+      <main className="lg:ml-[19rem] xl:ml-[21rem] pt-14 lg:pt-0 pb-20 lg:pb-8 min-h-screen">
+        <div className="max-w-6xl mx-auto px-4 py-6 lg:px-6">
           {children}
         </div>
       </main>
@@ -213,7 +195,7 @@ function NavButton({ item, active, onClick }: { item: NavItem; active: boolean; 
   return (
     <button onClick={onClick}
       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-        active ? 'bg-teal-50 text-teal-700' : 'text-neutral-600 hover:bg-neutral-100'
+        active ? 'bg-white text-teal-800 shadow-[0_10px_24px_rgba(6,122,112,0.08)]' : 'text-neutral-600 hover:bg-white/70'
       }`}>
       {item.icon}
       {item.label}

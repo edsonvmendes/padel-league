@@ -119,8 +119,7 @@ export default function LeagueSettingsPage() {
 // TAB GENERAL
 // ─────────────────────────────────────────
 function GeneralTab({ league, locale, onSaved }: { league: League; locale: string; onSaved: (l: League) => void }) {
-  const { db, run } = useDb();
-  const toast = useToast();
+  const { db, runOrThrow } = useDb();
   const isEs = locale === 'es'; const isPt = locale === 'pt';
 
   const WEEKDAYS: Weekday[] = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -154,12 +153,15 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
-    const { data, error } = await run(
-      () => db.from('leagues').update(form).eq('id', league.id).select().single(),
-      isPt ? 'Erro ao salvar' : isEs ? 'Error al guardar' : 'Save failed'
-    );
-    setSaving(false);
-    if (data && !error) onSaved(data);
+    try {
+      const data = await runOrThrow(
+        () => db.from('leagues').update(form).eq('id', league.id).select().single(),
+        isPt ? 'Erro ao salvar' : isEs ? 'Error al guardar' : 'Save failed'
+      );
+      if (data) onSaved(data);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -210,7 +212,7 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
 // TAB SLOTS
 // ─────────────────────────────────────────
 function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; slots: LeagueTimeSlot[]; locale: string; onChanged: () => void }) {
-  const { db, run } = useDb();
+  const { db, runOrThrow } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const isEs = locale === 'es'; const isPt = locale === 'pt';
@@ -227,9 +229,10 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
       return;
     }
     setAdding(true);
-    const { error } = await run(
+    await runOrThrow(
       () => db.from('league_time_slots').insert({ league_id: leagueId, slot_time: newTime, sort_order: slots.length }),
     );
+    const error = null;
     setAdding(false);
     if (!error) { setNewTime(''); toast.success(isPt ? 'Horário adicionado!' : isEs ? '¡Horario agregado!' : 'Slot added!'); onChanged(); }
   };
@@ -243,7 +246,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
       variant: 'danger',
     });
     if (!ok) return;
-    const { error } = await run(() => db.from('league_time_slots').delete().eq('id', s.id));
+    const error = await runOrThrow(() => db.from('league_time_slots').delete().eq('id', s.id));
     if (!error) { toast.success(isPt ? 'Removido' : isEs ? 'Eliminado' : 'Removed'); onChanged(); }
   };
 
@@ -251,7 +254,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
     const reordered = [...slots];
     const j = i + dir;
     [reordered[i], reordered[j]] = [reordered[j], reordered[i]];
-    await Promise.all(reordered.map((s, idx) => db.from('league_time_slots').update({ sort_order: idx }).eq('id', s.id)));
+    await Promise.all(reordered.map((s, idx) => runOrThrow(() => db.from('league_time_slots').update({ sort_order: idx }).eq('id', s.id))));
     onChanged();
   };
 
@@ -302,7 +305,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
 function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
   leagueId: string; courts: Court[]; league: League; locale: string; onChanged: () => void;
 }) {
-  const { db, run } = useDb();
+  const { db, runOrThrow } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const isEs = locale === 'es'; const isPt = locale === 'pt';
@@ -316,10 +319,10 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
       const toAdd = Array.from({ length: target - courts.length }, (_, i) => ({
         league_id: leagueId, court_number: courts.length + i + 1,
       }));
-      await run(() => db.from('courts').insert(toAdd));
+      await runOrThrow(() => db.from('courts').insert(toAdd));
     } else {
       const toRemove = courts.slice(target).map(c => c.id);
-      await run(() => db.from('courts').delete().in('id', toRemove));
+      await runOrThrow(() => db.from('courts').delete().in('id', toRemove));
     }
     setSyncing(false);
     toast.success(isPt ? 'Quadras sincronizadas!' : isEs ? '¡Canchas sincronizadas!' : 'Courts synced!');
@@ -328,7 +331,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
 
   const handleAdd = async () => {
     const next = courts.length > 0 ? Math.max(...courts.map(c => c.court_number)) + 1 : 1;
-    const { error } = await run(() => db.from('courts').insert({ league_id: leagueId, court_number: next }));
+    const error = await runOrThrow(() => db.from('courts').insert({ league_id: leagueId, court_number: next }));
     if (!error) { toast.success(isPt ? 'Quadra adicionada!' : isEs ? '¡Cancha agregada!' : 'Court added!'); onChanged(); }
   };
 
@@ -341,7 +344,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
       variant: 'warning',
     });
     if (!ok) return;
-    const { error } = await run(() => db.from('courts').delete().eq('id', c.id));
+    const error = await runOrThrow(() => db.from('courts').delete().eq('id', c.id));
     if (!error) { toast.success(isPt ? 'Removida' : isEs ? 'Eliminada' : 'Removed'); onChanged(); }
   };
 
@@ -406,7 +409,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
 // TAB RULES
 // ─────────────────────────────────────────
 function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; onSaved: () => void }) {
-  const { db, run } = useDb();
+  const { db, runOrThrow } = useDb();
   const isEs = locale === 'es'; const isPt = locale === 'pt';
   const [form, setForm] = useState<Rules>(rules);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -424,13 +427,16 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
-    const { id, ...rest } = form;
-    await run(
-      () => db.from('rules').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id),
-      isPt ? 'Erro ao salvar regras' : isEs ? 'Error al guardar reglas' : 'Failed to save rules'
-    );
-    setSaving(false);
-    onSaved();
+    try {
+      const { id, ...rest } = form;
+      await runOrThrow(
+        () => db.from('rules').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id),
+        isPt ? 'Erro ao salvar regras' : isEs ? 'Error al guardar reglas' : 'Failed to save rules'
+      );
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

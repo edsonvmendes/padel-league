@@ -22,7 +22,7 @@ const WEEKDAY_ES: Record<string, string> = {
 
 export default function LeaguesPage() {
   const { user, locale } = useAuth();
-  const { db, run } = useDb();
+  const { db, run, runOrThrow } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -71,7 +71,7 @@ export default function LeaguesPage() {
     if (Object.keys(e).length) { setErrors(e); return; }
     setSaving(true);
 
-    const { data: newLeague, error } = await run(
+    const newLeague = await runOrThrow(
       () => db.from('leagues').insert({
         name: form.name.trim(),
         weekday: form.weekday,
@@ -85,10 +85,10 @@ export default function LeaguesPage() {
     );
 
     setSaving(false);
-    if (error || !newLeague) return;
+    if (!newLeague) return;
 
     // Criar rules padrão para a liga
-    await run(() => db.from('rules').insert({
+    await runOrThrow(() => db.from('rules').insert({
       scope: 'league',
       league_id: newLeague.id,
       absence_penalty: -5,
@@ -98,7 +98,7 @@ export default function LeaguesPage() {
       relegation_count: 1,
       allow_merge_courts: false,
       whatsapp_template: null,
-    }));
+    }), isPt ? 'Erro ao criar regras da liga' : isEs ? 'Error al crear reglas de la liga' : 'Failed to create league rules');
 
     toast.success(isPt ? `Liga "${newLeague.name}" criada!` : isEs ? `¡Liga "${newLeague.name}" creada!` : `League "${newLeague.name}" created!`);
     setShowModal(false);
@@ -115,7 +115,10 @@ export default function LeaguesPage() {
       variant: 'danger',
     });
     if (!ok) return;
-    await run(() => db.from('leagues').delete().eq('id', l.id));
+    await runOrThrow(
+      () => db.from('leagues').delete().eq('id', l.id),
+      isPt ? 'Erro ao excluir liga' : isEs ? 'Error al eliminar liga' : 'Failed to delete league'
+    );
     toast.success(isPt ? 'Liga excluída' : isEs ? 'Liga eliminada' : 'League deleted');
     load();
   };

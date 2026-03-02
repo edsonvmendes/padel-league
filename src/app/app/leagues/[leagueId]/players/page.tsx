@@ -30,7 +30,7 @@ const EMPTY_FORM: FormState = {
 export default function PlayersPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
   const { user, locale } = useAuth();
-  const { db, run } = useDb();
+  const { db, run, runOrThrow } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const isEs = locale === 'es';
@@ -113,25 +113,21 @@ export default function PlayersPage() {
     };
 
     if (editing) {
-      const { error } = await run(
+      await runOrThrow(
         () => db.from('players').update(payload).eq('id', editing.id),
         isEs ? 'Error al actualizar jugadora' : isPt ? 'Erro ao atualizar jogadora' : 'Failed to update player'
       );
-      if (!error) {
         toast.success(isEs ? '¡Jugadora actualizada!' : isPt ? 'Jogadora atualizada!' : 'Player updated!');
         setShowForm(false);
         load();
-      }
     } else {
-      const { error } = await run(
+      await runOrThrow(
         () => db.from('players').insert({ ...payload, league_id: leagueId, owner_user_id: user!.id }),
         isEs ? 'Error al agregar jugadora' : isPt ? 'Erro ao adicionar jogadora' : 'Failed to add player'
       );
-      if (!error) {
         toast.success(isEs ? '¡Jugadora agregada!' : isPt ? 'Jogadora adicionada!' : 'Player added!');
         setShowForm(false);
         load();
-      }
     }
 
     setSaving(false);
@@ -152,21 +148,20 @@ export default function PlayersPage() {
 
     if (!ok) return;
 
-    const { error } = await run(
+    await runOrThrow(
       () => db.from('players').delete().eq('id', p.id),
       isEs ? 'Error al eliminar' : isPt ? 'Erro ao excluir' : 'Failed to delete'
     );
-    if (!error) {
       toast.success(isEs ? 'Jugadora eliminada' : isPt ? 'Jogadora excluída' : 'Player deleted');
       load();
-    }
   };
 
   const toggleActive = async (p: Player) => {
-    const { error } = await run(
-      () => db.from('players').update({ is_active: !p.is_active }).eq('id', p.id)
+    await runOrThrow(
+      () => db.from('players').update({ is_active: !p.is_active }).eq('id', p.id),
+      isEs ? 'Error al actualizar estado' : isPt ? 'Erro ao atualizar status' : 'Failed to update status'
     );
-    if (!error) load();
+    load();
   };
 
   const filtered = players.filter(p => {

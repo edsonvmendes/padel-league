@@ -14,7 +14,7 @@ import { Plus, Calendar, ChevronRight, X, Clock, Grid3X3, Lock, PlayCircle, Aler
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
   const { user, locale } = useAuth();
-  const { db, run } = useDb();
+  const { db, run, runOrThrow } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -104,7 +104,7 @@ export default function RoundsPage() {
 
     const nextNumber = rounds.length > 0 ? Math.max(...rounds.map(r => r.number)) + 1 : 1;
 
-    const { data: newRound, error } = await run(
+    const newRound = await runOrThrow(
       () => db.from('rounds').insert({
         league_id: leagueId,
         number: nextNumber,
@@ -114,7 +114,7 @@ export default function RoundsPage() {
       isPt ? 'Erro ao criar rodada' : isEs ? 'Error al crear jornada' : 'Failed to create round'
     );
 
-    if (error || !newRound) { setCreating(false); return; }
+    if (!newRound) { setCreating(false); return; }
     const round = newRound as any;
 
     // Criar grupos para cada combinação slot × court selecionados
@@ -128,7 +128,10 @@ export default function RoundsPage() {
         court_id: c.id,
         is_cancelled: false,
       })));
-      await run(() => db.from('round_court_groups').insert(groups));
+      await runOrThrow(
+        () => db.from('round_court_groups').insert(groups),
+        isPt ? 'Erro ao criar grupos da rodada' : isEs ? 'Error al crear grupos de la jornada' : 'Failed to create round groups'
+      );
     }
 
     setCreating(false);
@@ -150,7 +153,10 @@ export default function RoundsPage() {
       variant: 'danger',
     });
     if (!ok) return;
-    await run(() => db.from('rounds').delete().eq('id', r.id));
+    await runOrThrow(
+      () => db.from('rounds').delete().eq('id', r.id),
+      isPt ? 'Erro ao excluir rodada' : isEs ? 'Error al eliminar jornada' : 'Failed to delete round'
+    );
     toast.success(isPt ? 'Rodada excluída' : isEs ? 'Jornada eliminada' : 'Round deleted');
     loadAll();
   };

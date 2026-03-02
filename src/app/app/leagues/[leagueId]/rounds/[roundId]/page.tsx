@@ -25,7 +25,7 @@ interface GroupWithDetails {
 export default function RoundDetailPage() {
   const { leagueId, roundId } = useParams<{ leagueId: string; roundId: string }>();
   const { user, locale } = useAuth();
-  const { db, run } = useDb();
+  const { db, run, runOrThrow } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -40,14 +40,21 @@ export default function RoundDetailPage() {
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [startingRound, setStartingRound] = useState(false);
   const [closingRound, setClosingRound] = useState(false);
+  const isMutating = startingRound || closingRound;
+
+  const getActionErrorMessage = (error: any, fallback: string) =>
+    error?.message || fallback;
 
   useEffect(() => { if (user) loadAll(); }, [user, roundId]);
 
   const loadAll = async () => {
     setLoading(true);
     setLoadError(null);
+    setActionError(null);
     try {
       const [
         roundRes,
@@ -92,41 +99,7 @@ export default function RoundDetailPage() {
         setActiveSlot(current => current ?? slotsData[0].id);
       }
 
-      let resolvedGroups = groupsRes.data || [];
-
-      if (roundData && leagueData && slotsData.length > 0 && courtsData.length > 0) {
-        const expectedGroups = slotsData.flatMap((slot: LeagueTimeSlot) =>
-          courtsData.map((court: Court) => ({
-            round_id: roundData.id,
-            league_id: leagueData.id,
-            time_slot_id: slot.id,
-            court_id: court.id,
-            is_cancelled: false,
-          }))
-        );
-
-        if (expectedGroups.length > 0) {
-          const syncRes = await run(() =>
-            db.from('round_court_groups').upsert(expectedGroups, {
-              onConflict: 'round_id,time_slot_id,court_id',
-            })
-          );
-
-          if (syncRes.error) {
-            throw new Error(`round_court_groups sync: ${syncRes.error.message || 'unknown error'}`);
-          }
-
-          const reloadedGroupsRes = await run(() =>
-            db.from('round_court_groups').select('*').eq('round_id', roundId)
-          );
-
-          if (reloadedGroupsRes.error) {
-            throw new Error(`round_court_groups reload: ${reloadedGroupsRes.error.message || 'unknown error'}`);
-          }
-
-          resolvedGroups = reloadedGroupsRes.data || [];
-        }
-      }
+      const resolvedGroups = groupsRes.data || [];
 
       if (resolvedGroups.length > 0) {
         const gIds = resolvedGroups.map((g: any) => g.id);
@@ -169,50 +142,107 @@ export default function RoundDetailPage() {
 
   // ── Ações de jogadoras ──────────────────────────────────────
   const assignPlayer = async (groupId: string, position: number, playerId: string) => {
-    await run(() => db.from('round_court_players').delete().eq('group_id', groupId).eq('position', position));
-    await run(() => db.from('round_court_players').delete().eq('group_id', groupId).eq('player_id', playerId));
-    await run(() => db.from('round_court_players').insert({ group_id: groupId, player_id: playerId, position, attendance: 'present' }));
-    const { data: cpData } = await run(() => db.from('round_court_players').select('*').eq('group_id', groupId));
-    if (cpData && cpData.length === 4) {
-      const { data: existing } = await run(() => db.from('matches').select('id').eq('group_id', groupId));
-      if (!existing || existing.length === 0) {
-        await run(() => db.from('matches').insert(MATCH_PAIRINGS.map(mp => ({ group_id: groupId, ...mp }))));
+    if (isMutating) return;
+    setActionError(null);
+    try {
+      await runOrThrow(() => db.from('round_court_players').delete().eq('group_id', groupId).eq('position', position));
+      await runOrThrow(() => db.from('round_court_players').delete().eq('group_id', groupId).eq('player_id', playerId));
+      await runOrThrow(() => db.from('round_court_players').insert({ group_id: groupId, player_id: playerId, position, attendance: 'present' }));
+      const cpData = await runOrThrow(() => db.from('round_court_players').select('*').eq('group_id', groupId));
+      if (cpData && cpData.length === 4) {
+        const existing = await runOrThrow(() => db.from('matches').select('id').eq('group_id', groupId));
+        if (!existing || existing.length === 0) {
+          await runOrThrow(() => db.from('matches').insert(MATCH_PAIRINGS.map(mp => ({ group_id: groupId, ...mp }))));
+        }
       }
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel atualizar as jogadoras da quadra.' : isEs ? 'No se pudo actualizar las jugadoras de la cancha.' : 'Could not update court players.'
+      ));
     }
-    loadAll();
   };
 
   const removePlayer = async (cpId: string) => {
-    await run(() => db.from('round_court_players').delete().eq('id', cpId));
-    loadAll();
+    if (isMutating) return;
+    setActionError(null);
+    try {
+      await runOrThrow(() => db.from('round_court_players').delete().eq('id', cpId));
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel remover a jogadora.' : isEs ? 'No se pudo quitar la jugadora.' : 'Could not remove the player.'
+      ));
+    }
   };
 
   const toggleAttendance = async (cpId: string, current: string) => {
-    const cycle = { present: 'absent', absent: 'substitute', substitute: 'present' } as Record<string, string>;
-    await run(() => db.from('round_court_players').update({ attendance: cycle[current] || 'present' }).eq('id', cpId));
-    loadAll();
+    if (isMutating) return;
+    setActionError(null);
+    try {
+      const cycle = { present: 'absent', absent: 'substitute', substitute: 'present' } as Record<string, string>;
+      await runOrThrow(() => db.from('round_court_players').update({ attendance: cycle[current] || 'present' }).eq('id', cpId));
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel atualizar a presenca.' : isEs ? 'No se pudo actualizar la asistencia.' : 'Could not update attendance.'
+      ));
+    }
   };
 
   const saveScore = async (matchId: string, score1: number, score2: number) => {
+    if (isMutating) return;
     if (!isValidScore(score1) || !isValidScore(score2)) return;
-    await run(() => db.from('matches').update({ score_team1: score1, score_team2: score2, is_recorded: true }).eq('id', matchId));
-    loadAll();
+    setActionError(null);
+    try {
+      await runOrThrow(() => db.from('matches').update({ score_team1: score1, score_team2: score2, is_recorded: true }).eq('id', matchId));
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel salvar o placar.' : isEs ? 'No se pudo guardar el marcador.' : 'Could not save the score.'
+      ));
+    }
   };
 
   const setPhysicalCourt = async (groupId: string, physicalNum: number | null) => {
-    await run(() => db.from('round_court_groups').update({ physical_court_number: physicalNum }).eq('id', groupId));
-    loadAll();
+    if (isMutating) return;
+    setActionError(null);
+    try {
+      await runOrThrow(() => db.from('round_court_groups').update({ physical_court_number: physicalNum }).eq('id', groupId));
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel atualizar a quadra fisica.' : isEs ? 'No se pudo actualizar la cancha fisica.' : 'Could not update the physical court.'
+      ));
+    }
   };
 
   // ── Status da rodada ────────────────────────────────────────
   const startRound = async () => {
-    await run(() => db.from('rounds').update({ status: 'running' }).eq('id', roundId));
-    toast.success(isPt ? 'Rodada iniciada!' : isEs ? '¡Jornada iniciada!' : 'Round started!');
-    loadAll();
+    if (isMutating) return;
+    setActionError(null);
+    setStartingRound(true);
+    try {
+      await runOrThrow(() => db.from('rounds').update({ status: 'running' }).eq('id', roundId));
+      toast.success(isPt ? 'Rodada iniciada!' : isEs ? '¡Jornada iniciada!' : 'Round started!');
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel iniciar a rodada.' : isEs ? 'No se pudo iniciar la jornada.' : 'Could not start the round.'
+      ));
+    } finally {
+      setStartingRound(false);
+    }
   };
 
   const closeRound = async () => {
-    if (!round || !rules) return;
+    if (!round) return;
 
     const ok = await confirm({
       title: isPt ? 'Fechar rodada' : isEs ? 'Cerrar jornada' : 'Close round',
@@ -223,37 +253,20 @@ export default function RoundDetailPage() {
     });
     if (!ok) return;
 
+    setActionError(null);
     setClosingRound(true);
     try {
-      for (const g of groups) {
-        if (g.group.is_cancelled || g.players.length < 2) continue;
-        const pts = calculateGroupPoints(g.matches, g.players, rules);
-        for (const [playerId, points] of pts) {
-          await run(() => db.from('round_points').upsert(
-            { round_id: roundId, player_id: playerId, points },
-            { onConflict: 'round_id,player_id' }
-          ));
-        }
-      }
-
-      const { data: allPoints } = await run(() => db.from('round_points').select('player_id, points').eq('round_id', roundId));
-      if (allPoints) {
-        for (const rp of allPoints as any[]) {
-          const { data: existing } = await run(() =>
-            db.from('league_rankings').select('*').eq('league_id', leagueId).eq('player_id', rp.player_id).single()
-          );
-          if (existing) {
-            const ex = existing as any;
-            await run(() => db.from('league_rankings').update({ total_points: ex.total_points + rp.points, updated_at: new Date().toISOString() }).eq('id', ex.id));
-          } else {
-            await run(() => db.from('league_rankings').insert({ league_id: leagueId, player_id: rp.player_id, total_points: rp.points }));
-          }
-        }
-      }
-
-      await run(() => db.from('rounds').update({ status: 'closed' }).eq('id', roundId));
+      await runOrThrow(
+        () => db.rpc('close_round', { p_round_id: roundId }),
+        isPt ? 'Erro ao fechar rodada' : isEs ? 'Error al cerrar jornada' : 'Failed to close round'
+      );
       toast.success(isPt ? 'Rodada fechada! Ranking atualizado.' : isEs ? '¡Jornada cerrada! Ranking actualizado.' : 'Round closed! Ranking updated.');
       loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel fechar a rodada.' : isEs ? 'No se pudo cerrar la jornada.' : 'Could not close the round.'
+      ));
     } finally {
       setClosingRound(false);
     }
@@ -333,6 +346,15 @@ export default function RoundDetailPage() {
         </div>
       )}
 
+      {actionError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="font-semibold">
+            {isPt ? 'Falha na operacao' : isEs ? 'Fallo en la operacion' : 'Operation failed'}
+          </div>
+          <div className="mt-1 break-words">{actionError}</div>
+        </div>
+      )}
+
       {/* Header card */}
       <div className="card p-5">
         <div className="flex items-start justify-between gap-3">
@@ -357,21 +379,22 @@ export default function RoundDetailPage() {
         {/* Action buttons */}
         <div className="mt-4 flex flex-wrap gap-2">
           {round.status === 'draft' && (
-            <button onClick={startRound} className="btn-primary flex items-center gap-1.5">
-              <PlayCircle size={16} />
-              {isPt ? 'Iniciar' : isEs ? 'Iniciar jornada' : 'Start round'}
+            <button onClick={startRound} disabled={isMutating} className="btn-primary flex items-center gap-1.5 disabled:opacity-60">
+              {startingRound
+                ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Iniciando...' : isEs ? 'Iniciando...' : 'Starting...'}</>
+                : <><PlayCircle size={16} />{isPt ? 'Iniciar' : isEs ? 'Iniciar jornada' : 'Start round'}</>}
             </button>
           )}
           {round.status === 'running' && (
-            <button onClick={closeRound} disabled={closingRound}
+            <button onClick={closeRound} disabled={isMutating}
               className="bg-neutral-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 hover:bg-neutral-700 transition disabled:opacity-60">
               {closingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Fechando...' : isEs ? 'Cerrando...' : 'Closing...'}</>
                 : <><Lock size={16} />{isPt ? 'Fechar rodada' : isEs ? 'Cerrar jornada' : 'Close round'}</>}
             </button>
           )}
-          <button onClick={copyWhatsApp}
-            className="bg-[#25D366] text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 hover:bg-[#1ebe59] transition">
+          <button onClick={copyWhatsApp} disabled={isMutating}
+            className="bg-[#25D366] text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 hover:bg-[#1ebe59] transition disabled:opacity-60">
             <MessageCircle size={16} />
             WhatsApp
           </button>
@@ -412,7 +435,7 @@ export default function RoundDetailPage() {
             {isPt ? 'Esta rodada ainda nao tem grupos' : isEs ? 'Esta jornada todavia no tiene grupos' : 'This round has no groups yet'}
           </p>
           <p className="text-sm text-neutral-400">
-            {isPt ? 'Configure quadras da liga e recarregue a rodada.' : isEs ? 'Configura las canchas de la liga y vuelve a cargar la jornada.' : 'Configure league courts and reload this round.'}
+            {isPt ? 'Configure horarios e quadras antes de criar a proxima rodada.' : isEs ? 'Configura horarios y canchas antes de crear la proxima jornada.' : 'Configure time slots and courts before creating the next round.'}
           </p>
           <button
             onClick={() => router.push(`/app/leagues/${leagueId}/settings`)}
@@ -435,6 +458,7 @@ export default function RoundDetailPage() {
             assignedInSlot={assignedInSlot}
             rules={rules}
             expandedGroup={expandedGroup}
+            disabled={isClosed || isMutating}
             locale={locale}
             onExpand={id => setExpandedGroup(expandedGroup === id ? null : id)}
             onAssignPlayer={assignPlayer}
@@ -452,10 +476,10 @@ export default function RoundDetailPage() {
 // ─────────────────────────────────────────────────────────────
 // COURT CARD
 // ─────────────────────────────────────────────────────────────
-function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlot, rules, expandedGroup, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical }: {
+function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlot, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical }: {
   g: GroupWithDetails; isClosed: boolean; physicalCourtsCount: number;
   allPlayers: Player[]; assignedInSlot: Set<string>; rules: Rules | null;
-  expandedGroup: string | null; locale: string;
+  expandedGroup: string | null; disabled: boolean; locale: string;
   onExpand: (id: string) => void;
   onAssignPlayer: (gId: string, pos: number, pId: string) => void;
   onRemovePlayer: (cpId: string) => void;
@@ -505,7 +529,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
               </h3>
               <div className="flex items-center gap-1 mt-0.5">
                 <MapPin size={12} className="text-orange-500" />
-                {!isClosed ? (
+                {!disabled ? (
                   <select
                     className="text-xs border-none bg-transparent text-orange-600 font-semibold p-0 focus:ring-0 cursor-pointer"
                     value={physicalNum || ''}
@@ -545,7 +569,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
                   <div className={`rounded-xl p-3 text-center border-2 ${ATTENDANCE_STYLE[cp.attendance] || 'bg-neutral-50 border-neutral-200'}`}>
                     <div className="text-[10px] font-bold text-neutral-400 mb-1">{posLabel}</div>
                     <div className="font-semibold text-neutral-800 text-sm truncate">{cp.playerData?.full_name || '?'}</div>
-                    {!isClosed ? (
+                    {!disabled ? (
                       <div className="mt-2 flex flex-col gap-1">
                         <button onClick={() => onToggleAttendance(cp.id, cp.attendance)}
                           className={`w-full py-1 rounded-lg text-xs font-semibold ${ATTENDANCE_BTN[cp.attendance] || ''}`}>
@@ -563,7 +587,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
                       </p>
                     )}
                   </div>
-                ) : !isClosed ? (
+                ) : !disabled ? (
                   <div className="rounded-xl border-2 border-dashed border-neutral-200 p-3">
                     <div className="text-[10px] font-bold text-neutral-400 mb-1 text-center">{posLabel}</div>
                     <select className="w-full text-xs border border-neutral-200 rounded-lg p-1.5 bg-white text-neutral-700"
@@ -620,7 +644,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
                   <MatchScoreRow key={m.id} match={m}
                     team1={[t1p1?.playerData?.full_name || '?', t1p2?.playerData?.full_name || '?']}
                     team2={[t2p1?.playerData?.full_name || '?', t2p2?.playerData?.full_name || '?']}
-                    onSave={onSaveScore} disabled={isClosed} locale={locale} />
+                    onSave={onSaveScore} disabled={disabled} locale={locale} />
                 );
               })}
 
