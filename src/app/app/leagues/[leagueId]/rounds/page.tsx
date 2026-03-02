@@ -7,9 +7,9 @@ import { useDb } from '@/hooks/useDb';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList } from '@/components/Skeleton';
-import { Round, League, LeagueTimeSlot, Court } from '@/types/database';
+import { Round, League, LeagueTimeSlot, Court, Rules } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy, MapPin, MessageCircle } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy, MapPin, MessageCircle, Send } from 'lucide-react';
 
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -25,6 +25,7 @@ export default function RoundsPage() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [slots, setSlots] = useState<LeagueTimeSlot[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
+  const [rules, setRules] = useState<Rules | null>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalDate, setModalDate] = useState('');
@@ -37,17 +38,19 @@ export default function RoundsPage() {
   }, [user, leagueId]);
 
   const loadAll = async () => {
-    const [{ data: leagueData }, { data: roundData }, { data: slotData }, { data: courtData }] = await Promise.all([
+    const [{ data: leagueData }, { data: roundData }, { data: slotData }, { data: courtData }, { data: rulesData }] = await Promise.all([
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
       run(() => db.from('rounds').select('*').eq('league_id', leagueId).order('number')),
       run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
       run(() => db.from('courts').select('*').eq('league_id', leagueId).order('court_number')),
+      run(() => db.from('rules').select('*').eq('scope', 'league').eq('league_id', leagueId).maybeSingle()),
     ]);
 
     setLeague(leagueData);
     setRounds(roundData || []);
     setSlots(slotData || []);
     setCourts(courtData || []);
+    setRules(rulesData || null);
     setLoading(false);
   };
 
@@ -214,8 +217,23 @@ export default function RoundsPage() {
   const runningCount = rounds.filter((round) => round.status === 'running').length;
   const draftCount = rounds.filter((round) => round.status === 'draft').length;
 
-  const copyWhatsAppSummary = async () => {
+  const buildWhatsAppSummary = () => {
     const latestRound = rounds.length > 0 ? [...rounds].sort((a, b) => b.number - a.number)[0] : null;
+    const template = rules?.whatsapp_template?.trim();
+
+    if (template) {
+      return template
+        .replaceAll('{league}', league?.name || (isPt ? 'Liga' : isEs ? 'Liga' : 'League'))
+        .replaceAll('{round}', latestRound ? `${latestRound.number}` : '-')
+        .replaceAll('{date}', latestRound ? fmtDate(latestRound.round_date) : '-')
+        .replaceAll('{running}', `${runningCount}`)
+        .replaceAll('{closed}', `${closedCount}`)
+        .replaceAll('{draft}', `${draftCount}`)
+        .replaceAll('{rounds}', `${rounds.length}`)
+        .replaceAll('{total_rounds}', `${league?.rounds_count || 0}`)
+        .replaceAll('{weekday}', league?.weekday || '-');
+    }
+
     const lines = [
       `*${league?.name || (isPt ? 'Liga' : isEs ? 'Liga' : 'League')}*`,
       isPt ? `Dia base: ${league?.weekday || '-'}` : isEs ? `Dia base: ${league?.weekday || '-'}` : `Base day: ${league?.weekday || '-'}`,
@@ -244,12 +262,25 @@ export default function RoundsPage() {
       );
     }
 
+    return lines.join('\n');
+  };
+
+  const copyWhatsAppSummary = async () => {
+    const message = buildWhatsAppSummary();
+
     try {
-      await navigator.clipboard.writeText(lines.join('\n'));
+      await navigator.clipboard.writeText(message);
       toast.success(isPt ? 'Resumo copiado para WhatsApp.' : isEs ? 'Resumen copiado para WhatsApp.' : 'Summary copied for WhatsApp.');
     } catch {
       toast.error(isPt ? 'Nao foi possivel copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
     }
+  };
+
+  const openWhatsAppSummary = () => {
+    const message = buildWhatsAppSummary();
+    if (typeof window === 'undefined') return;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -276,6 +307,13 @@ export default function RoundsPage() {
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <button
+              onClick={openWhatsAppSummary}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 lg:w-auto"
+            >
+              <Send size={16} />
+              {isPt ? 'Abrir WhatsApp' : isEs ? 'Abrir WhatsApp' : 'Open WhatsApp'}
+            </button>
             <button
               onClick={copyWhatsAppSummary}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white lg:w-auto"

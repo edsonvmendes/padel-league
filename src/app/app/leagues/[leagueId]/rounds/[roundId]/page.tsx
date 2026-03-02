@@ -8,9 +8,10 @@ import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { Round, League, LeagueTimeSlot, Court, RoundCourtGroup, RoundCourtPlayer, Match, Player, Rules } from '@/types/database';
 import { t } from '@/lib/i18n';
+import { parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
 import { MATCH_PAIRINGS, calculateGroupPoints, isValidScore, generateWhatsAppMessage } from '@/lib/scoring-engine';
 import {
-  ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin,
+  ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus,
   Trophy, ChevronDown, ChevronUp, AlertTriangle, XCircle,
 } from 'lucide-react';
 
@@ -287,8 +288,8 @@ export default function RoundDetailPage() {
   };
 
   // ── WhatsApp ────────────────────────────────────────────────
-  const copyWhatsApp = async () => {
-    if (!league || !round) return;
+  const buildRoundWhatsAppMessage = async () => {
+    if (!league || !round) return null;
     const { data: rankings } = await run(() =>
       db.from('league_rankings').select('*, player:players(full_name)').eq('league_id', leagueId).order('total_points', { ascending: false })
     );
@@ -298,7 +299,12 @@ export default function RoundDetailPage() {
       courtNumber: g.court.court_number,
       players: g.players.map(p => p.playerData?.full_name || '?'),
     }));
-    const msg = generateWhatsAppMessage(league.name, round.number, rankData, nextGroups, locale as any);
+    return generateWhatsAppMessage(league.name, round.number, rankData, nextGroups, locale as any);
+  };
+
+  const copyWhatsApp = async () => {
+    const msg = await buildRoundWhatsAppMessage();
+    if (!msg) return;
 
     let ok = false;
     if (window.isSecureContext && navigator.clipboard?.writeText) {
@@ -315,6 +321,77 @@ export default function RoundDetailPage() {
   };
 
   // ── Render ──────────────────────────────────────────────────
+  const openWhatsAppRound = async () => {
+    const msg = await buildRoundWhatsAppMessage();
+    if (!msg || typeof window === 'undefined') return;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const openWhatsAppGroup = (g: GroupWithDetails) => {
+    if (!league || !round || typeof window === 'undefined') return;
+
+    const lines = [
+      `*${league.name}*`,
+      isPt ? `Rodada ${round.number}` : isEs ? `Jornada ${round.number}` : `Round ${round.number}`,
+      isPt ? `Quadra nível ${g.court.court_number}` : isEs ? `Cancha nivel ${g.court.court_number}` : `Level court ${g.court.court_number}`,
+      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
+      '',
+      ...[1, 2, 3, 4].map((position) => {
+        const player = g.players.find((entry) => entry.position === position);
+        const label = ['A', 'B', 'C', 'D'][position - 1];
+        if (!player) return `${label}: ${isPt ? 'a definir' : isEs ? 'por definir' : 'to assign'}`;
+        return `${label}: ${player.playerData?.full_name || '?'} (${player.attendance})`;
+      }),
+      '',
+      isPt ? 'Confirme presença ou envie substituta, por favor.' : isEs ? 'Confirma asistencia o envía suplente, por favor.' : 'Please confirm attendance or send a substitute.',
+    ];
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const openGoogleCalendarRound = () => {
+    if (!league || !round || typeof window === 'undefined') return;
+
+    const parseSlotMinutes = (slotTime: string) => {
+      const [hours, minutes] = slotTime.split(':').map((value) => parseInt(value, 10));
+      return ((Number.isFinite(hours) ? hours : 9) * 60) + (Number.isFinite(minutes) ? minutes : 0);
+    };
+    const buildDate = (minutesFromMidnight: number) => {
+      const [year, month, day] = round.round_date.split('-').map((value) => parseInt(value, 10));
+      const hours = Math.floor(minutesFromMidnight / 60);
+      const minutes = minutesFromMidnight % 60;
+      return new Date(year, (month || 1) - 1, day || 1, hours, minutes, 0, 0);
+    };
+    const formatGoogleDate = (date: Date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+
+    const slotMinutes = slots.length > 0
+      ? slots.map((slot) => parseSlotMinutes(slot.slot_time)).sort((a, b) => a - b)
+      : [9 * 60];
+    const startDate = buildDate(slotMinutes[0]);
+    const endDate = buildDate(slotMinutes[slotMinutes.length - 1] + 90);
+    const startLabel = slots[0]?.slot_time || '--:--';
+    const endLabel = slots[slots.length - 1]?.slot_time || startLabel;
+    const details = [
+      league.name,
+      isPt ? `Rodada ${round.number} | ${startLabel} até ${endLabel}` : isEs ? `Jornada ${round.number} | ${startLabel} a ${endLabel}` : `Round ${round.number} | ${startLabel} to ${endLabel}`,
+      isPt ? 'Resumo da programação do dia.' : isEs ? 'Resumen de la programación del día.' : 'Day schedule summary.',
+      '',
+      isPt ? 'Programação de quadras:' : isEs ? 'Programación de canchas:' : 'Court schedule:',
+      ...groups.map((group) => {
+        const playerNames = group.players.map((player) => player.playerData?.full_name || '?').join(', ');
+        return `${group.slot?.slot_time || '--:--'} • ${isPt ? 'Quadra' : isEs ? 'Cancha' : 'Court'} ${group.court?.court_number || '-'}${playerNames ? ` • ${playerNames}` : ''}`;
+      }),
+    ].join('\n').trim();
+
+    const url = new URL('https://calendar.google.com/calendar/render');
+    url.searchParams.set('action', 'TEMPLATE');
+    url.searchParams.set('text', `${league.name} | ${isPt ? 'Rodada' : isEs ? 'Jornada' : 'Round'} ${round.number}`);
+    url.searchParams.set('dates', `${formatGoogleDate(startDate)}/${formatGoogleDate(endDate)}`);
+    url.searchParams.set('details', details);
+
+    window.open(url.toString(), '_blank', 'noopener,noreferrer');
+  };
+
   const filteredGroups = groups;
 
   if (loading) return (
@@ -354,6 +431,39 @@ export default function RoundDetailPage() {
 
   const isClosed = round.status === 'closed';
   const physicalCourtsCount = league?.physical_courts_count || 6;
+  const attendanceIssues: any[] = [];
+  const levelNum = 0;
+  const g = { slot: null as { slot_time?: string } | null };
+  const attendanceLabel = (_value: string) => '';
+
+  const _unusedOpenAttendanceWhatsApp1 = () => {
+    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
+
+    const lines = [
+      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
+      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
+      '',
+      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
+      '',
+      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envía suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
+    ];
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
+  };
+  const _unusedOpenAttendanceWhatsApp2 = () => {
+    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
+
+    const lines = [
+      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
+      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
+      '',
+      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
+      '',
+      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envía suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
+    ];
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="space-y-5">
@@ -423,7 +533,17 @@ export default function RoundDetailPage() {
           <button onClick={copyWhatsApp} disabled={isMutating}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(37,211,102,0.45)] transition hover:bg-[#1ebe59] disabled:opacity-60 sm:w-auto">
             <MessageCircle size={16} />
-            WhatsApp
+            {isPt ? 'Copiar WhatsApp' : isEs ? 'Copiar WhatsApp' : 'Copy WhatsApp'}
+          </button>
+          <button onClick={openWhatsAppRound} disabled={isMutating}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 disabled:opacity-60 sm:w-auto">
+            <MessageCircle size={16} />
+            {isPt ? 'Abrir WhatsApp' : isEs ? 'Abrir WhatsApp' : 'Open WhatsApp'}
+          </button>
+          <button onClick={openGoogleCalendarRound} disabled={isMutating}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border border-sky-200 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-500/15 disabled:opacity-60 sm:w-auto">
+            <CalendarPlus size={16} />
+            {isPt ? 'Google Agenda' : isEs ? 'Google Calendar' : 'Google Calendar'}
           </button>
         </div>
 
@@ -489,6 +609,7 @@ export default function RoundDetailPage() {
             onSaveScore={saveScore}
             onSetPhysical={setPhysicalCourt}
             onSetSlot={setGroupSlot}
+            onOpenWhatsApp={() => openWhatsAppGroup(g)}
           />
         ))
       )}
@@ -499,7 +620,7 @@ export default function RoundDetailPage() {
 // ─────────────────────────────────────────────────────────────
 // COURT CARD
 // ─────────────────────────────────────────────────────────────
-function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical, onSetSlot }: {
+function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
   g: GroupWithDetails; isClosed: boolean; physicalCourtsCount: number;
   allPlayers: Player[]; allGroups: GroupWithDetails[]; slots: LeagueTimeSlot[]; rules: Rules | null;
   expandedGroup: string | null; disabled: boolean; locale: string;
@@ -510,12 +631,31 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
   onSaveScore: (mId: string, s1: number, s2: number) => void;
   onSetPhysical: (gId: string, n: number | null) => void;
   onSetSlot: (gId: string, slotId: string) => void;
+  onOpenWhatsApp: () => void;
 }) {
   const isEs = locale === 'es'; const isPt = locale === 'pt';
+  const toast = useToast();
   const isExpanded = expandedGroup === g.group.id;
   const allRecorded = g.matches.length === 3 && g.matches.every(m => m.is_recorded);
   const hasPlayers = g.players.length === 4;
   const pendingCount = g.matches.filter(m => !m.is_recorded).length;
+  const attendanceIssues = g.players.filter(player => player.attendance !== 'present');
+  const absentIssues = attendanceIssues.filter(player => player.attendance === 'absent');
+  const substituteIssues = attendanceIssues.filter(player => player.attendance === 'substitute');
+  const openAttendanceWhatsApp = () => {
+    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
+
+    const lines = [
+      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
+      isPt ? `Horário: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
+      '',
+      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
+      '',
+      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envía suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
+    ];
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank', 'noopener,noreferrer');
+  };
   const levelNum = g.court?.court_number || 0;
   const physicalNum = g.group.physical_court_number;
   const assignedInCurrentSlot = new Set(
@@ -533,6 +673,85 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
     present:    'bg-emerald-200 text-emerald-800',
     absent:     'bg-red-200 text-red-800',
     substitute: 'bg-amber-200 text-amber-800',
+  };
+  const copyAttendanceWhatsApp = async () => {
+    if (attendanceIssues.length === 0 || typeof window === 'undefined') return;
+
+    const lines = [
+      isPt ? `Quadra nível ${levelNum} - ajuste de presença` : isEs ? `Cancha nivel ${levelNum} - ajuste de asistencia` : `Level court ${levelNum} - attendance follow-up`,
+      isPt ? `Horario: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
+      '',
+      ...attendanceIssues.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
+      '',
+      isPt ? 'Por favor confirme presença ou envie substituta para este jogo.' : isEs ? 'Por favor confirma asistencia o envia suplente para este partido.' : 'Please confirm attendance or send a substitute for this match.',
+    ];
+
+    const message = lines.join('\n');
+    let copied = false;
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(message); copied = true; } catch {}
+    }
+    if (!copied) {
+      const ta = Object.assign(document.createElement('textarea'), { value: message, readOnly: true, style: 'position:fixed;left:-9999px' });
+      document.body.appendChild(ta);
+      ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+
+    copied
+      ? toast.success(isPt ? 'Mensagem copiada.' : isEs ? 'Mensaje copiado.' : 'Message copied.')
+      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+  };
+  const buildIssueMessage = (kind: 'absent' | 'substitute') => {
+    const players = kind === 'absent' ? absentIssues : substituteIssues;
+    if (players.length === 0) return null;
+
+    const title = kind === 'absent'
+      ? (isPt ? `Quadra nivel ${levelNum} - confirmar ausencias` : isEs ? `Cancha nivel ${levelNum} - confirmar ausencias` : `Level court ${levelNum} - confirm absences`)
+      : (isPt ? `Quadra nivel ${levelNum} - confirmar substitutas` : isEs ? `Cancha nivel ${levelNum} - confirmar suplentes` : `Level court ${levelNum} - confirm substitutes`);
+    const cta = kind === 'absent'
+      ? (isPt ? 'Por favor confirme presença ou indique substituta para estas jogadoras.' : isEs ? 'Por favor confirma asistencia o indica suplente para estas jugadoras.' : 'Please confirm attendance or provide a substitute for these players.')
+      : (isPt ? 'Por favor confirme as substitutas disponiveis para esta quadra.' : isEs ? 'Por favor confirma las suplentes disponibles para esta cancha.' : 'Please confirm the available substitutes for this court.');
+
+    return [
+      title,
+      isPt ? `Horario: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
+      '',
+      ...players.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
+      '',
+      cta,
+    ].join('\n');
+  };
+  const copyIssueMessage = async (kind: 'absent' | 'substitute') => {
+    const message = buildIssueMessage(kind);
+    if (!message || typeof window === 'undefined') return;
+
+    let copied = false;
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(message); copied = true; } catch {}
+    }
+    if (!copied) {
+      const ta = Object.assign(document.createElement('textarea'), { value: message, readOnly: true, style: 'position:fixed;left:-9999px' });
+      document.body.appendChild(ta);
+      ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+
+    copied
+      ? toast.success(isPt ? 'Mensagem copiada.' : isEs ? 'Mensaje copiado.' : 'Message copied.')
+      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+  };
+  const openIssueWhatsApp = (kind: 'absent' | 'substitute') => {
+    const message = buildIssueMessage(kind);
+    if (!message || typeof window === 'undefined') return;
+    const players = kind === 'absent' ? absentIssues : substituteIssues;
+    const directPhone = players.length === 1 ? toWhatsAppPhone(parsePlayerContact(players[0].playerData?.notes).phone) : null;
+    const target = directPhone
+      ? `https://wa.me/${directPhone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(target, '_blank', 'noopener,noreferrer');
   };
   const attendanceLabel = (a: string) => {
     if (a === 'present')    return isPt ? '✓ Presente' : isEs ? '✓ Presente' : '✓ Present';
@@ -588,7 +807,14 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
               </div>
             </div>
           </div>
-          <div className="self-start sm:self-auto">
+          <div className="flex self-start sm:self-auto items-center gap-2">
+            <button
+              onClick={onOpenWhatsApp}
+              className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-500/10 px-2.5 py-2 text-emerald-700 transition hover:bg-emerald-500/15"
+              title={isPt ? 'Abrir WhatsApp desta quadra' : isEs ? 'Abrir WhatsApp de esta cancha' : 'Open WhatsApp for this court'}
+            >
+              <MessageCircle size={14} />
+            </button>
             {allRecorded
               ? <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">✓ {isPt ? 'Ok' : isEs ? 'Ok' : 'Ok'}</span>
               : hasPlayers && pendingCount > 0
@@ -655,6 +881,49 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
           <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
             <AlertTriangle size={15} />
             {isPt ? `${4 - g.players.length} jogadoras faltando` : isEs ? `Faltan ${4 - g.players.length} jugadoras` : `${4 - g.players.length} players missing`}
+          </div>
+        </div>
+      )}
+
+      {attendanceIssues.length > 0 && (
+        <div className="px-5 pb-4">
+          <div className="space-y-2">
+            {absentIssues.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => copyIssueMessage('absent')}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <MessageCircle size={15} />
+                  {isPt ? 'Copiar ausentes' : isEs ? 'Copiar ausentes' : 'Copy absences'}
+                </button>
+                <button
+                  onClick={() => openIssueWhatsApp('absent')}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100"
+                >
+                  <MessageCircle size={15} />
+                  {isPt ? 'Cobrar ausentes' : isEs ? 'Pedir asistencia' : 'Follow up absences'}
+                </button>
+              </div>
+            )}
+            {substituteIssues.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  onClick={() => copyIssueMessage('substitute')}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <MessageCircle size={15} />
+                  {isPt ? 'Copiar substitutas' : isEs ? 'Copiar suplentes' : 'Copy substitutes'}
+                </button>
+                <button
+                  onClick={() => openIssueWhatsApp('substitute')}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800 transition hover:bg-amber-100"
+                >
+                  <MessageCircle size={15} />
+                  {isPt ? 'Chamar substitutas' : isEs ? 'Llamar suplentes' : 'Contact substitutes'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

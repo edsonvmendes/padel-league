@@ -7,7 +7,7 @@ import { useDb, validate } from '@/hooks/useDb';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList } from '@/components/Skeleton';
-import { League, LeagueTimeSlot, Court, Rules, Weekday } from '@/types/database';
+import { League, LeagueTimeSlot, Court, Round, Rules, Weekday } from '@/types/database';
 import { Settings, Clock, Grid3X3, Trophy, ChevronLeft, Plus, Save, Trash2 } from 'lucide-react';
 
 type Tab = 'general' | 'slots' | 'courts' | 'rules';
@@ -26,6 +26,7 @@ export default function LeagueSettingsPage() {
   const [league, setLeague] = useState<League | null>(null);
   const [slots, setSlots] = useState<LeagueTimeSlot[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
+  const [rounds, setRounds] = useState<Round[]>([]);
   const [rules, setRules] = useState<Rules | null>(null);
 
   useEffect(() => {
@@ -33,16 +34,18 @@ export default function LeagueSettingsPage() {
   }, [leagueId]);
 
   const loadAll = async () => {
-    const [{ data: leagueData }, { data: slotData }, { data: courtData }, { data: rulesData }] = await Promise.all([
+    const [{ data: leagueData }, { data: slotData }, { data: courtData }, { data: roundData }, { data: rulesData }] = await Promise.all([
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
       run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
       run(() => db.from('courts').select('*').eq('league_id', leagueId).order('court_number')),
+      run(() => db.from('rounds').select('*').eq('league_id', leagueId).order('number')),
       run(() => db.from('rules').select('*').eq('scope', 'league').eq('league_id', leagueId).single()),
     ]);
 
     setLeague(leagueData);
     setSlots(slotData || []);
     setCourts(courtData || []);
+    setRounds(roundData || []);
     setRules(rulesData);
     setLoading(false);
   };
@@ -153,6 +156,8 @@ export default function LeagueSettingsPage() {
 
       {activeTab === 'rules' && rules && (
         <RulesTab
+          league={league}
+          rounds={rounds}
           rules={rules}
           locale={locale}
           onSaved={() => {
@@ -524,8 +529,9 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
   );
 }
 
-function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; onSaved: () => void }) {
+function RulesTab({ league, rounds, rules, locale, onSaved }: { league: League; rounds: Round[]; rules: Rules; locale: string; onSaved: () => void }) {
   const { db, runOrThrow } = useDb();
+  const toast = useToast();
   const isEs = locale === 'es';
   const isPt = locale === 'pt';
   const [form, setForm] = useState<Rules>(rules);
@@ -533,6 +539,56 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
   const [saving, setSaving] = useState(false);
 
   const updateField = (field: keyof Rules, value: Rules[keyof Rules]) => setForm((current) => ({ ...current, [field]: value }));
+  const latestRound = rounds.length > 0 ? [...rounds].sort((a, b) => b.number - a.number)[0] : null;
+  const runningCount = rounds.filter((round) => round.status === 'running').length;
+  const closedCount = rounds.filter((round) => round.status === 'closed').length;
+  const draftCount = rounds.filter((round) => round.status === 'draft').length;
+  const previewDate = latestRound
+    ? new Date(`${latestRound.round_date}T12:00:00`).toLocaleDateString(isPt ? 'pt-BR' : isEs ? 'es-ES' : 'en-US', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      })
+    : '-';
+
+  const previewMessage = (() => {
+    const template = form.whatsapp_template?.trim();
+
+    if (!template) {
+      return [
+        `${league.name}`,
+        isPt ? `Dia base: ${league.weekday}` : isEs ? `Dia base: ${league.weekday}` : `Base day: ${league.weekday}`,
+        isPt ? `Rodadas: ${rounds.length}/${league.rounds_count}` : isEs ? `Jornadas: ${rounds.length}/${league.rounds_count}` : `Rounds: ${rounds.length}/${league.rounds_count}`,
+        isPt ? `Em andamento: ${runningCount}` : isEs ? `En curso: ${runningCount}` : `Running: ${runningCount}`,
+        isPt ? `Fechadas: ${closedCount}` : isEs ? `Cerradas: ${closedCount}` : `Closed: ${closedCount}`,
+      ].join('\n');
+    }
+
+    return template
+      .replaceAll('{league}', league.name)
+      .replaceAll('{round}', latestRound ? `${latestRound.number}` : '-')
+      .replaceAll('{date}', previewDate)
+      .replaceAll('{running}', `${runningCount}`)
+      .replaceAll('{closed}', `${closedCount}`)
+      .replaceAll('{draft}', `${draftCount}`)
+      .replaceAll('{rounds}', `${rounds.length}`)
+      .replaceAll('{total_rounds}', `${league.rounds_count}`)
+      .replaceAll('{weekday}', league.weekday);
+  })();
+
+  const copyPreviewMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(previewMessage);
+      toast.success(isPt ? 'Preview copiado.' : isEs ? 'Vista previa copiada.' : 'Preview copied.');
+    } catch {
+      toast.error(isPt ? 'Nao foi possivel copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+    }
+  };
+
+  const openPreviewWhatsApp = () => {
+    if (typeof window === 'undefined') return;
+    window.open(`https://wa.me/?text=${encodeURIComponent(previewMessage)}`, '_blank', 'noopener,noreferrer');
+  };
 
   const handleSave = async () => {
     const nextErrors = validate(form, {
@@ -650,12 +706,75 @@ function RulesTab({ rules, locale, onSaved }: { rules: Rules; locale: string; on
         label={isPt ? 'Template WhatsApp' : isEs ? 'Plantilla WhatsApp' : 'WhatsApp template'}
         hint={isPt ? 'Opcional. Deixe vazio ou monte sua própria base de mensagem.' : isEs ? 'Opcional. Déjalo vacío o arma tu propia base de mensaje.' : 'Optional. Leave it blank or build your own message base.'}
       >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => updateField(
+              'whatsapp_template',
+              isPt
+                ? 'Liga {league}\nRodada {round} em {date}\nStatus: {running} em andamento, {closed} fechadas\nBase: {rounds}/{total_rounds}'
+                : isEs
+                  ? 'Liga {league}\nJornada {round} en {date}\nEstado: {running} en curso, {closed} cerradas\nBase: {rounds}/{total_rounds}'
+                  : 'League {league}\nRound {round} on {date}\nStatus: {running} running, {closed} closed\nBase: {rounds}/{total_rounds}'
+            )}
+            className="inline-flex items-center justify-center rounded-2xl border border-neutral-200 bg-white/80 px-3 py-2 text-xs font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white"
+          >
+            {isPt ? 'Usar exemplo' : isEs ? 'Usar ejemplo' : 'Use example'}
+          </button>
+          <button
+            onClick={() => updateField('whatsapp_template', null)}
+            className="inline-flex items-center justify-center rounded-2xl border border-neutral-200 bg-white/80 px-3 py-2 text-xs font-semibold text-neutral-500 transition hover:border-neutral-300 hover:bg-white hover:text-neutral-700"
+          >
+            {isPt ? 'Limpar' : isEs ? 'Limpiar' : 'Clear'}
+          </button>
+        </div>
         <textarea
           className="input-field h-28 resize-y text-sm"
           value={form.whatsapp_template || ''}
           onChange={(event) => updateField('whatsapp_template', event.target.value || null)}
         />
+        <div className="rounded-[1.4rem] bg-neutral-900/5 px-4 py-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+            {isPt ? 'Placeholders disponiveis' : isEs ? 'Placeholders disponibles' : 'Available placeholders'}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {['{league}', '{round}', '{date}', '{running}', '{closed}', '{draft}', '{rounds}', '{total_rounds}', '{weekday}'].map((token) => (
+              <span key={token} className="rounded-full bg-white/85 px-2.5 py-1 text-[11px] font-semibold text-neutral-600 ring-1 ring-neutral-900/6">
+                {token}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-5 text-neutral-500">
+            {isPt
+              ? 'Exemplo: "Liga {league} - rodada {round} em {date}". O sistema substitui tudo automaticamente antes de abrir o WhatsApp.'
+              : isEs
+                ? 'Ejemplo: "Liga {league} - jornada {round} en {date}". El sistema reemplaza todo automáticamente antes de abrir WhatsApp.'
+                : 'Example: "League {league} - round {round} on {date}". The system replaces everything automatically before opening WhatsApp.'}
+          </p>
+        </div>
       </FormField>
+
+      <div className="rounded-[1.4rem] border border-emerald-200/70 bg-emerald-500/8 px-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+            {isPt ? 'Preview da mensagem' : isEs ? 'Vista previa del mensaje' : 'Message preview'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={copyPreviewMessage}
+              className="inline-flex items-center justify-center rounded-2xl border border-emerald-300/70 bg-white/80 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:bg-white"
+            >
+              {isPt ? 'Copiar' : isEs ? 'Copiar' : 'Copy'}
+            </button>
+            <button
+              onClick={openPreviewWhatsApp}
+              className="inline-flex items-center justify-center rounded-2xl border border-emerald-300/70 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
+            >
+              {isPt ? 'Abrir WhatsApp' : isEs ? 'Abrir WhatsApp' : 'Open WhatsApp'}
+            </button>
+          </div>
+        </div>
+        <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-emerald-900">{previewMessage}</pre>
+      </div>
 
       <SaveButton
         saving={saving}

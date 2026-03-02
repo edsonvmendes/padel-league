@@ -7,13 +7,15 @@ import { useDb, validate } from '@/hooks/useDb';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList, FieldError } from '@/components/Skeleton';
-import { Player, PaymentMethod } from '@/types/database';
+import { League, Player, PaymentMethod } from '@/types/database';
 import { t } from '@/lib/i18n';
 import { downloadCsv, safeFileName } from '@/lib/clientExport';
-import { Plus, Search, X, Edit2, Trash2, Users, Download } from 'lucide-react';
+import { buildPlayerNotes, normalizePhoneInput, parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
+import { Plus, Search, X, Edit2, Trash2, Users, Download, Send, MessageCircle, Smartphone, Copy } from 'lucide-react';
 
 type FormState = {
   full_name: string;
+  phone: string;
   birthdate: string;
   payment: PaymentMethod;
   notes: string;
@@ -22,6 +24,7 @@ type FormState = {
 
 const EMPTY_FORM: FormState = {
   full_name: '',
+  phone: '',
   birthdate: '',
   payment: 'cash',
   notes: '',
@@ -38,6 +41,7 @@ export default function PlayersPage() {
   const isPt = locale === 'pt';
 
   const [players, setPlayers] = useState<Player[]>([]);
+  const [league, setLeague] = useState<League | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeOnly, setActiveOnly] = useState(true);
@@ -52,12 +56,16 @@ export default function PlayersPage() {
   }, [user, leagueId]);
 
   const load = async () => {
-    const { data } = await run(
-      () => db.from('players').select('*').eq('league_id', leagueId).order('full_name'),
-      isEs ? 'Error al cargar jugadoras' : isPt ? 'Erro ao carregar jogadoras' : 'Failed to load players'
-    );
+    const [{ data: playerData }, { data: leagueData }] = await Promise.all([
+      run(
+        () => db.from('players').select('*').eq('league_id', leagueId).order('full_name'),
+        isEs ? 'Error al cargar jugadoras' : isPt ? 'Erro ao carregar jogadoras' : 'Failed to load players'
+      ),
+      run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
+    ]);
 
-    setPlayers(data || []);
+    setPlayers(playerData || []);
+    setLeague(leagueData || null);
     setLoading(false);
   };
 
@@ -69,12 +77,14 @@ export default function PlayersPage() {
   };
 
   const openEdit = (player: Player) => {
+    const contact = parsePlayerContact(player.notes);
     setEditing(player);
     setForm({
       full_name: player.full_name,
+      phone: contact.phone,
       birthdate: player.birthdate || '',
       payment: player.payment,
-      notes: player.notes || '',
+      notes: contact.notes,
       is_active: player.is_active,
     });
     setErrors({});
@@ -111,7 +121,7 @@ export default function PlayersPage() {
       full_name: form.full_name.trim(),
       birthdate: form.birthdate || null,
       payment: form.payment,
-      notes: form.notes.trim() || null,
+      notes: buildPlayerNotes(form.phone, form.notes),
       is_active: form.is_active,
     };
 
@@ -157,7 +167,7 @@ export default function PlayersPage() {
       isEs ? 'Error al eliminar' : isPt ? 'Erro ao excluir' : 'Failed to delete'
     );
 
-    toast.success(isEs ? 'Jugadora eliminada.' : isPt ? 'Jogadora excluida.' : 'Player deleted.');
+    toast.success(isEs ? 'Jugadora eliminada.' : isPt ? 'Jogadora excluída.' : 'Player deleted.');
     load();
   };
 
@@ -187,25 +197,30 @@ export default function PlayersPage() {
   const exportPlayers = () => {
     const source = filtered.length > 0 ? filtered : players;
     if (source.length === 0) {
-      toast.warning(isPt ? 'Nao ha jogadoras para exportar' : isEs ? 'No hay jugadoras para exportar' : 'No players to export');
+      toast.warning(isPt ? 'Não há jogadoras para exportar' : isEs ? 'No hay jugadoras para exportar' : 'No players to export');
       return;
     }
 
     const headers = [
       isPt ? 'Nome' : isEs ? 'Nombre' : 'Name',
+      isPt ? 'Telefone' : isEs ? 'Teléfono' : 'Phone',
       isPt ? 'Status' : isEs ? 'Estado' : 'Status',
       isPt ? 'Pagamento' : isEs ? 'Pago' : 'Payment',
       isPt ? 'Nascimento' : isEs ? 'Nacimiento' : 'Birthdate',
-      isPt ? 'Observacoes' : isEs ? 'Observaciones' : 'Notes',
+      isPt ? 'Observações' : isEs ? 'Observaciones' : 'Notes',
     ];
 
-    const rows = source.map((player) => [
-      player.full_name,
-      player.is_active ? (isPt ? 'Ativa' : isEs ? 'Activa' : 'Active') : (isPt ? 'Inativa' : isEs ? 'Inactiva' : 'Inactive'),
-      payLabel(player.payment),
-      player.birthdate || '',
-      player.notes || '',
-    ]);
+    const rows = source.map((player) => {
+      const contact = parsePlayerContact(player.notes);
+      return [
+        player.full_name,
+        contact.phone,
+        player.is_active ? (isPt ? 'Ativa' : isEs ? 'Activa' : 'Active') : (isPt ? 'Inativa' : isEs ? 'Inactiva' : 'Inactive'),
+        payLabel(player.payment),
+        player.birthdate || '',
+        contact.notes,
+      ];
+    });
 
     downloadCsv(
       `${safeFileName(`players-${leagueId}`)}.csv`,
@@ -215,6 +230,78 @@ export default function PlayersPage() {
 
     toast.success(isPt ? 'Lista exportada.' : isEs ? 'Lista exportada.' : 'Roster exported.');
   };
+
+  const openWhatsAppRoster = () => {
+    const source = filtered.length > 0 ? filtered : players;
+    if (source.length === 0) {
+      toast.warning(isPt ? 'Não há jogadoras para compartilhar' : isEs ? 'No hay jugadoras para compartir' : 'No players to share');
+      return;
+    }
+
+    const visibleNames = source.slice(0, 20).map((player) => `- ${player.full_name}`);
+    const remainingCount = source.length - visibleNames.length;
+    const title = league?.name || (isPt ? 'Liga' : isEs ? 'Liga' : 'League');
+    const intro = isPt
+      ? `Base atual de jogadoras - ${title}`
+      : isEs
+        ? `Base actual de jugadoras - ${title}`
+        : `Current player roster - ${title}`;
+    const statusLine = activeOnly
+      ? (isPt ? `Filtro: ativas (${source.length})` : isEs ? `Filtro: activas (${source.length})` : `Filter: active (${source.length})`)
+      : (isPt ? `Lista visível (${source.length})` : isEs ? `Lista visible (${source.length})` : `Visible list (${source.length})`);
+    const overflowLine = remainingCount > 0
+      ? (isPt ? `... e mais ${remainingCount}` : isEs ? `... y ${remainingCount} más` : `... and ${remainingCount} more`)
+      : null;
+
+    const message = [intro, statusLine, '', ...visibleNames, overflowLine].filter(Boolean).join('\n');
+    if (typeof window === 'undefined') return;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const openPlayerWhatsApp = (player: Player) => {
+    if (typeof window === 'undefined') return;
+
+    const contact = parsePlayerContact(player.notes);
+    const phone = toWhatsAppPhone(contact.phone);
+    if (!phone) {
+      toast.warning(isPt ? 'Adicione um telefone para abrir direto.' : isEs ? 'Agrega un teléfono para abrir directo.' : 'Add a phone number to open directly.');
+      return;
+    }
+
+    const message = [
+      isPt ? `Oi, ${player.full_name}.` : isEs ? `Hola, ${player.full_name}.` : `Hi, ${player.full_name}.`,
+      isPt ? `Contato rapido da liga ${league?.name || ''}.` : isEs ? `Contacto rapido de la liga ${league?.name || ''}.` : `Quick contact from ${league?.name || 'the league'}.`,
+    ].join('\n');
+
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const copyPlayerPhone = async (player: Player) => {
+    if (typeof window === 'undefined') return;
+
+    const contact = parsePlayerContact(player.notes);
+    const phone = contact.phone.trim();
+    if (!phone) return;
+
+    let copied = false;
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(phone); copied = true; } catch {}
+    }
+    if (!copied) {
+      const ta = Object.assign(document.createElement('textarea'), { value: phone, readOnly: true, style: 'position:fixed;left:-9999px' });
+      document.body.appendChild(ta);
+      ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+
+    copied
+      ? toast.success(isPt ? 'Telefone copiado.' : isEs ? 'Teléfono copiado.' : 'Phone copied.')
+      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+  };
+
+  const formPhoneReady = !form.phone || !!toWhatsAppPhone(form.phone);
 
   return (
     <div className="space-y-6">
@@ -241,6 +328,13 @@ export default function PlayersPage() {
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+            <button
+              onClick={openWhatsAppRoster}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 lg:w-auto"
+            >
+              <Send size={16} />
+              {isPt ? 'Abrir WhatsApp' : isEs ? 'Abrir WhatsApp' : 'Open WhatsApp'}
+            </button>
             <button
               onClick={exportPlayers}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white lg:w-auto"
@@ -323,11 +417,17 @@ export default function PlayersPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((player) => (
-            <div
-              key={player.id}
-              className="rounded-[1.6rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-4 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.3)]"
-            >
+          {filtered.map((player) => {
+            const contact = parsePlayerContact(player.notes);
+            const rawPhone = contact.phone.trim();
+            const phone = toWhatsAppPhone(rawPhone);
+            const hasPhone = !!rawPhone;
+
+            return (
+              <div
+                key={player.id}
+                className="rounded-[1.6rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-4 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.3)]"
+              >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <button
@@ -347,17 +447,41 @@ export default function PlayersPage() {
                       <p className={`truncate text-sm font-bold ${player.is_active ? 'text-neutral-900' : 'text-neutral-400 line-through'}`}>
                         {player.full_name}
                       </p>
+                      {hasPhone && (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ring-1 ${
+                          phone
+                            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80'
+                            : 'bg-amber-50 text-amber-700 ring-amber-200/80'
+                        }`}>
+                          <Smartphone size={11} />
+                          {phone ? (isPt ? 'Whats' : isEs ? 'Whats' : 'Phone') : (isPt ? 'Revisar' : isEs ? 'Revisar' : 'Check')}
+                        </span>
+                      )}
                       <span className={player.is_active ? 'badge-present' : 'badge-absent'}>
                         {player.is_active ? t('active', locale) : t('inactive', locale)}
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs leading-5 text-neutral-500">
-                      {payLabel(player.payment)}{player.notes ? ` - ${player.notes}` : ''}
+                      {contact.phone ? `${contact.phone} - ` : ''}{payLabel(player.payment)}{contact.notes ? ` - ${contact.notes}` : ''}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-1">
+                  {hasPhone && (
+                    <button
+                      onClick={() => copyPlayerPhone(player)}
+                      title={isPt ? 'Copiar telefone' : isEs ? 'Copiar teléfono' : 'Copy phone'}
+                      className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
+                    >
+                      <Copy size={15} />
+                    </button>
+                  )}
+                  {phone && (
+                    <button onClick={() => openPlayerWhatsApp(player)} className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-emerald-50 hover:text-emerald-600">
+                      <MessageCircle size={15} />
+                    </button>
+                  )}
                   <button onClick={() => openEdit(player)} className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-teal-50 hover:text-teal-600">
                     <Edit2 size={15} />
                   </button>
@@ -367,7 +491,8 @@ export default function PlayersPage() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -386,7 +511,7 @@ export default function PlayersPage() {
             <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
-                  {editing ? (isPt ? 'Edicao' : isEs ? 'Edicion' : 'Editing') : (isPt ? 'Nova atleta' : isEs ? 'Nueva jugadora' : 'New player')}
+                  {editing ? (isPt ? 'Edição' : isEs ? 'Edición' : 'Editing') : (isPt ? 'Nova atleta' : isEs ? 'Nueva jugadora' : 'New player')}
                 </p>
                 <h2 className="mt-1 text-lg font-bold text-neutral-900">
                   {editing ? t('editPlayer', locale) : t('addPlayer', locale)}
@@ -413,7 +538,7 @@ export default function PlayersPage() {
                 {!errors.full_name && (
                   <p className="mt-1 text-xs leading-5 text-neutral-400">
                     {isPt
-                      ? 'Use o nome do jeito que voce organiza sua lista. O cadastro continua simples e livre.'
+                      ? 'Use o nome do jeito que você organiza sua lista. O cadastro continua simples e livre.'
                       : isEs
                         ? 'Usa el nombre como organizas tu lista. El registro sigue simple y libre.'
                         : 'Use the name however you organize your roster. The entry stays simple and flexible.'}
@@ -454,6 +579,29 @@ export default function PlayersPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="label-field">
+                  {isPt ? 'Telefone' : isEs ? 'Teléfono' : 'Phone'}
+                  <span className="ml-1 font-normal text-neutral-400">({isEs ? 'opcional' : isPt ? 'opcional' : 'optional'})</span>
+                </label>
+                <input
+                  className="input-field"
+                  value={form.phone}
+                  onChange={(event) => setForm((current) => ({ ...current, phone: normalizePhoneInput(event.target.value) }))}
+                  placeholder={isEs ? '+34 600 000 000' : isPt ? '+55 11 99999-9999' : '+1 555 555 5555'}
+                  inputMode="tel"
+                  autoComplete="tel"
+                />
+                <p className="mt-1 text-xs leading-5 text-neutral-400">
+                  {isPt ? 'Se preencher, o app pode abrir o WhatsApp direto no contato da jogadora.' : isEs ? 'Si lo completas, el sistema puede abrir WhatsApp directo en el contacto de la jugadora.' : 'If filled, the app can open WhatsApp directly for this player.'}
+                </p>
+                {!formPhoneReady && (
+                  <p className="mt-1 text-xs font-medium text-amber-700">
+                    {isPt ? 'Adicione pelo menos 8 dígitos para o número ficar pronto para WhatsApp.' : isEs ? 'Agrega al menos 8 dígitos para que el número quede listo para WhatsApp.' : 'Add at least 8 digits so the number is ready for WhatsApp.'}
+                  </p>
+                )}
               </div>
 
               <div>
