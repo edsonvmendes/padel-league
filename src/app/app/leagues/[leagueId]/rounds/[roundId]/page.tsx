@@ -37,7 +37,6 @@ export default function RoundDetailPage() {
   const [groups, setGroups] = useState<GroupWithDetails[]>([]);
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [rules, setRules] = useState<Rules | null>(null);
-  const [activeSlot, setActiveSlot] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -94,10 +93,6 @@ export default function RoundDetailPage() {
       setSlots(slotsData);
       setAllPlayers(playersData);
       setRules(rulesData[0] || null);
-
-      if (slotsData.length) {
-        setActiveSlot(current => current ?? slotsData[0].id);
-      }
 
       const resolvedGroups = groupsRes.data || [];
 
@@ -222,6 +217,20 @@ export default function RoundDetailPage() {
     }
   };
 
+  const setGroupSlot = async (groupId: string, slotId: string) => {
+    if (isMutating) return;
+    setActionError(null);
+    try {
+      await runOrThrow(() => db.from('round_court_groups').update({ time_slot_id: slotId }).eq('id', groupId));
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'Nao foi possivel atualizar o horario do jogo.' : isEs ? 'No se pudo actualizar el horario del juego.' : 'Could not update the match time.'
+      ));
+    }
+  };
+
   // ── Status da rodada ────────────────────────────────────────
   const startRound = async () => {
     if (isMutating) return;
@@ -301,25 +310,34 @@ export default function RoundDetailPage() {
   };
 
   // ── Render ──────────────────────────────────────────────────
-  const filteredGroups = groups.filter(g => g.slot?.id === activeSlot);
-  const assignedInSlot = new Set(groups.filter(g => g.slot?.id === activeSlot).flatMap(g => g.players.map(p => p.player_id)));
+  const filteredGroups = groups;
 
   if (loading) return (
     <div className="space-y-4 animate-pulse">
-      <div className="card p-5"><div className="h-6 bg-neutral-200 rounded w-1/3 mb-3" /><div className="h-4 bg-neutral-100 rounded w-1/2" /></div>
-      {[1,2].map(i => <div key={i} className="card p-4"><div className="h-4 bg-neutral-200 rounded w-1/4 mb-3" /><div className="grid grid-cols-4 gap-2">{[1,2,3,4].map(j => <div key={j} className="h-20 bg-neutral-100 rounded-xl" />)}</div></div>)}
+      <div className="rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.35)]">
+        <div className="mb-3 h-7 w-1/3 rounded-full bg-neutral-200" />
+        <div className="h-4 w-1/2 rounded-full bg-neutral-100" />
+      </div>
+      {[1, 2].map(i => (
+        <div key={i} className="card p-5">
+          <div className="mb-4 h-4 w-1/4 rounded-full bg-neutral-200" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {[1, 2, 3, 4].map(j => <div key={j} className="h-24 rounded-2xl bg-neutral-100" />)}
+          </div>
+        </div>
+      ))}
     </div>
   );
   if (!round) {
     if (loadError) {
       return (
         <div className="max-w-2xl mx-auto py-10">
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 shadow-[0_18px_34px_-30px_rgba(220,38,38,0.25)]">
             <div className="font-semibold">Round load error</div>
             <div className="mt-1 break-words">{loadError}</div>
             <button
               onClick={loadAll}
-              className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">
+              className="mt-3 rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700">
               Retry
             </button>
           </div>
@@ -335,7 +353,7 @@ export default function RoundDetailPage() {
   return (
     <div className="space-y-5">
       {loadError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 shadow-[0_18px_34px_-30px_rgba(220,38,38,0.25)]">
           <div className="font-semibold">Round load error</div>
           <div className="mt-1 break-words">{loadError}</div>
           <button
@@ -347,7 +365,7 @@ export default function RoundDetailPage() {
       )}
 
       {actionError && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 shadow-[0_18px_34px_-30px_rgba(180,83,9,0.22)]">
           <div className="font-semibold">
             {isPt ? 'Falha na operacao' : isEs ? 'Fallo en la operacion' : 'Operation failed'}
           </div>
@@ -356,18 +374,22 @@ export default function RoundDetailPage() {
       )}
 
       {/* Header card */}
-      <div className="card p-5">
-        <div className="flex items-start justify-between gap-3">
+      <section className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[radial-gradient(circle_at_top_right,rgba(20,184,166,0.16),transparent_38%),radial-gradient(circle_at_bottom_left,rgba(14,165,233,0.14),transparent_34%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,250,252,0.95))] p-6 shadow-[0_28px_80px_-42px_rgba(15,23,42,0.42)]">
+        <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
+        <div className="relative flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <button onClick={() => router.push(`/app/leagues/${leagueId}/rounds`)}
-              className="mt-0.5 p-2 rounded-xl text-neutral-500 hover:text-neutral-800 hover:bg-neutral-100 transition flex-shrink-0">
+              className="mt-0.5 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/80 text-neutral-500 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.28)] transition hover:text-neutral-800">
               <ArrowLeft size={18} />
             </button>
             <div className="min-w-0">
-              <h1 className="text-xl font-extrabold text-neutral-900">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
+                {isPt ? 'Centro da rodada' : isEs ? 'Centro de jornada' : 'Round control'}
+              </p>
+              <h1 className="mt-1 text-3xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">
                 {isPt ? `Rodada ${round.number}` : isEs ? `Jornada ${round.number}` : `Round ${round.number}`}
               </h1>
-              <p className="text-sm text-neutral-500 flex items-center gap-1.5 mt-0.5">
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-neutral-500">
                 <MapPin size={13} className="text-teal-500" />
                 {league?.name}
               </p>
@@ -377,9 +399,9 @@ export default function RoundDetailPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-wrap gap-2">
           {round.status === 'draft' && (
-            <button onClick={startRound} disabled={isMutating} className="btn-primary flex items-center gap-1.5 disabled:opacity-60">
+            <button onClick={startRound} disabled={isMutating} className="btn-primary inline-flex items-center gap-1.5 disabled:opacity-60">
               {startingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Iniciando...' : isEs ? 'Iniciando...' : 'Starting...'}</>
                 : <><PlayCircle size={16} />{isPt ? 'Iniciar' : isEs ? 'Iniciar jornada' : 'Start round'}</>}
@@ -387,35 +409,29 @@ export default function RoundDetailPage() {
           )}
           {round.status === 'running' && (
             <button onClick={closeRound} disabled={isMutating}
-              className="bg-neutral-900 text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 hover:bg-neutral-700 transition disabled:opacity-60">
+              className="inline-flex items-center gap-1.5 rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(15,23,42,0.45)] transition hover:bg-neutral-700 disabled:opacity-60">
               {closingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Fechando...' : isEs ? 'Cerrando...' : 'Closing...'}</>
                 : <><Lock size={16} />{isPt ? 'Fechar rodada' : isEs ? 'Cerrar jornada' : 'Close round'}</>}
             </button>
           )}
           <button onClick={copyWhatsApp} disabled={isMutating}
-            className="bg-[#25D366] text-white px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-1.5 hover:bg-[#1ebe59] transition disabled:opacity-60">
+            className="inline-flex items-center gap-1.5 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(37,211,102,0.45)] transition hover:bg-[#1ebe59] disabled:opacity-60">
             <MessageCircle size={16} />
             WhatsApp
           </button>
         </div>
 
-        {/* Slot tabs */}
         {slots.length > 0 && (
-          <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
-            {slots.map(s => (
-              <button key={s.id} onClick={() => setActiveSlot(s.id)}
-                className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                  activeSlot === s.id
-                    ? 'bg-teal-600 text-white shadow-sm'
-                    : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                }`}>
-                ⏰ {s.slot_time}
-              </button>
-            ))}
+          <div className="mt-5 rounded-[1.4rem] bg-neutral-900/5 px-4 py-3 text-sm text-neutral-600">
+            {isPt
+              ? 'Horario e quadra fisica podem ser definidos em cada jogo.'
+              : isEs
+                ? 'Horario y cancha fisica pueden definirse en cada juego.'
+                : 'Time slot and physical court can be set per game.'}
           </div>
         )}
-      </div>
+      </section>
 
       {/* Court cards */}
       {slots.length === 0 ? (
@@ -448,14 +464,15 @@ export default function RoundDetailPage() {
           {isPt ? 'Nenhuma quadra neste horário' : isEs ? 'No hay canchas en este horario' : 'No courts in this time slot'}
         </div>
       ) : (
-        filteredGroups.map(g => (
+        groups.map(g => (
           <CourtCard
             key={g.group.id}
             g={g}
             isClosed={isClosed}
             physicalCourtsCount={physicalCourtsCount}
             allPlayers={allPlayers}
-            assignedInSlot={assignedInSlot}
+            allGroups={groups}
+            slots={slots}
             rules={rules}
             expandedGroup={expandedGroup}
             disabled={isClosed || isMutating}
@@ -466,6 +483,7 @@ export default function RoundDetailPage() {
             onToggleAttendance={toggleAttendance}
             onSaveScore={saveScore}
             onSetPhysical={setPhysicalCourt}
+            onSetSlot={setGroupSlot}
           />
         ))
       )}
@@ -476,9 +494,9 @@ export default function RoundDetailPage() {
 // ─────────────────────────────────────────────────────────────
 // COURT CARD
 // ─────────────────────────────────────────────────────────────
-function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlot, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical }: {
+function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical, onSetSlot }: {
   g: GroupWithDetails; isClosed: boolean; physicalCourtsCount: number;
-  allPlayers: Player[]; assignedInSlot: Set<string>; rules: Rules | null;
+  allPlayers: Player[]; allGroups: GroupWithDetails[]; slots: LeagueTimeSlot[]; rules: Rules | null;
   expandedGroup: string | null; disabled: boolean; locale: string;
   onExpand: (id: string) => void;
   onAssignPlayer: (gId: string, pos: number, pId: string) => void;
@@ -486,6 +504,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
   onToggleAttendance: (cpId: string, att: string) => void;
   onSaveScore: (mId: string, s1: number, s2: number) => void;
   onSetPhysical: (gId: string, n: number | null) => void;
+  onSetSlot: (gId: string, slotId: string) => void;
 }) {
   const isEs = locale === 'es'; const isPt = locale === 'pt';
   const isExpanded = expandedGroup === g.group.id;
@@ -494,6 +513,11 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
   const pendingCount = g.matches.filter(m => !m.is_recorded).length;
   const levelNum = g.court?.court_number || 0;
   const physicalNum = g.group.physical_court_number;
+  const assignedInCurrentSlot = new Set(
+    allGroups
+      .filter(other => other.slot?.id === g.slot?.id && other.group.id !== g.group.id)
+      .flatMap(other => other.players.map(player => player.player_id))
+  );
 
   const ATTENDANCE_STYLE: Record<string, string> = {
     present:    'bg-emerald-50 border-emerald-300',
@@ -512,26 +536,38 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
   };
 
   return (
-    <div className={`card overflow-hidden ${g.group.is_cancelled ? 'opacity-40' : ''}`}>
+    <div className={`overflow-hidden rounded-[1.8rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] ${g.group.is_cancelled ? 'opacity-40' : ''}`}>
       {/* Header */}
-      <div className="p-4 bg-gradient-to-r from-neutral-50 to-white border-b border-neutral-100">
+      <div className="border-b border-neutral-100 bg-gradient-to-r from-neutral-50 to-white p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center font-bold shadow-sm ${
-              allRecorded ? 'bg-emerald-500 text-white' : hasPlayers ? 'bg-teal-500 text-white' : 'bg-neutral-200 text-neutral-500'
+            <div className={`flex h-12 w-12 flex-col items-center justify-center rounded-2xl font-bold shadow-[0_18px_34px_-24px_rgba(15,23,42,0.28)] ${
+              allRecorded ? 'bg-emerald-500 text-white' : hasPlayers ? 'bg-teal-500 text-white' : 'bg-neutral-900/8 text-neutral-500'
             }`}>
               <span className="text-[9px] uppercase leading-none">{isPt ? 'Nív' : isEs ? 'Niv' : 'Lvl'}</span>
               <span className="text-lg leading-none">{levelNum}</span>
             </div>
             <div>
-              <h3 className="font-bold text-neutral-800">
+              <h3 className="text-sm font-black text-neutral-900 sm:text-base">
                 {isPt ? `Quadra Nível ${levelNum}` : isEs ? `Cancha Nivel ${levelNum}` : `Level Court ${levelNum}`}
               </h3>
-              <div className="flex items-center gap-1 mt-0.5">
+              <div className="mt-1 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                {!disabled ? (
+                  <select
+                    className="cursor-pointer rounded-lg border-none bg-transparent p-0 text-xs font-semibold text-teal-700 focus:ring-0"
+                    value={g.slot?.id || ''}
+                    onChange={e => { if (e.target.value) onSetSlot(g.group.id, e.target.value); }}>
+                    {slots.map(slot => (
+                      <option key={slot.id} value={slot.id}>{slot.slot_time}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-xs font-semibold text-teal-700">{g.slot?.slot_time || '—'}</span>
+                )}
                 <MapPin size={12} className="text-orange-500" />
                 {!disabled ? (
                   <select
-                    className="text-xs border-none bg-transparent text-orange-600 font-semibold p-0 focus:ring-0 cursor-pointer"
+                    className="cursor-pointer rounded-lg border-none bg-transparent p-0 text-xs font-semibold text-orange-600 focus:ring-0"
                     value={physicalNum || ''}
                     onChange={e => onSetPhysical(g.group.id, e.target.value ? parseInt(e.target.value) : null)}>
                     <option value="">{isPt ? '— Quadra física —' : isEs ? '— Cancha física —' : '— Physical court —'}</option>
@@ -558,21 +594,21 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
       </div>
 
       {/* Players grid */}
-      <div className="p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="p-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[1, 2, 3, 4].map(pos => {
             const cp = g.players.find(p => p.position === pos);
             const posLabel = ['A', 'B', 'C', 'D'][pos - 1];
             return (
               <div key={pos}>
                 {cp ? (
-                  <div className={`rounded-xl p-3 text-center border-2 ${ATTENDANCE_STYLE[cp.attendance] || 'bg-neutral-50 border-neutral-200'}`}>
-                    <div className="text-[10px] font-bold text-neutral-400 mb-1">{posLabel}</div>
-                    <div className="font-semibold text-neutral-800 text-sm truncate">{cp.playerData?.full_name || '?'}</div>
+                  <div className={`rounded-2xl p-3 text-center border-2 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.2)] ${ATTENDANCE_STYLE[cp.attendance] || 'bg-neutral-50 border-neutral-200'}`}>
+                    <div className="mb-1 text-[10px] font-bold text-neutral-400">{posLabel}</div>
+                    <div className="truncate text-sm font-bold text-neutral-800">{cp.playerData?.full_name || '?'}</div>
                     {!disabled ? (
-                      <div className="mt-2 flex flex-col gap-1">
+                      <div className="mt-2 flex flex-col gap-1.5">
                         <button onClick={() => onToggleAttendance(cp.id, cp.attendance)}
-                          className={`w-full py-1 rounded-lg text-xs font-semibold ${ATTENDANCE_BTN[cp.attendance] || ''}`}>
+                          className={`w-full rounded-xl py-1.5 text-xs font-semibold ${ATTENDANCE_BTN[cp.attendance] || ''}`}>
                           {attendanceLabel(cp.attendance)}
                         </button>
                         <button onClick={() => onRemovePlayer(cp.id)}
@@ -588,14 +624,14 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
                     )}
                   </div>
                 ) : !disabled ? (
-                  <div className="rounded-xl border-2 border-dashed border-neutral-200 p-3">
-                    <div className="text-[10px] font-bold text-neutral-400 mb-1 text-center">{posLabel}</div>
-                    <select className="w-full text-xs border border-neutral-200 rounded-lg p-1.5 bg-white text-neutral-700"
+                  <div className="rounded-2xl border-2 border-dashed border-neutral-200 p-3">
+                    <div className="mb-1 text-center text-[10px] font-bold text-neutral-400">{posLabel}</div>
+                    <select className="w-full rounded-xl border border-neutral-200 bg-white p-2 text-xs text-neutral-700"
                       value=""
                       onChange={e => { if (e.target.value) onAssignPlayer(g.group.id, pos, e.target.value); }}>
                       <option value="">{isPt ? 'Selecionar...' : isEs ? 'Seleccionar...' : 'Select...'}</option>
                       {allPlayers
-                        .filter(p => !assignedInSlot.has(p.id) && !g.players.some(gp => gp.player_id === p.id))
+                        .filter(p => !assignedInCurrentSlot.has(p.id) && !g.players.some(gp => gp.player_id === p.id))
                         .map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
                     </select>
                   </div>
@@ -610,8 +646,8 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
 
       {/* Aviso < 4 jogadoras */}
       {g.players.length > 0 && g.players.length < 4 && g.matches.length === 0 && (
-        <div className="px-4 pb-3">
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2 text-sm text-amber-700">
+        <div className="px-5 pb-4">
+          <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
             <AlertTriangle size={15} />
             {isPt ? `${4 - g.players.length} jogadoras faltando` : isEs ? `Faltan ${4 - g.players.length} jugadoras` : `${4 - g.players.length} players missing`}
           </div>
@@ -622,7 +658,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
       {g.matches.length > 0 && (
         <div className="border-t border-neutral-100">
           <button onClick={() => onExpand(g.group.id)}
-            className="w-full px-4 py-3 flex items-center justify-between bg-neutral-50 hover:bg-neutral-100 transition">
+            className="flex w-full items-center justify-between bg-neutral-50 px-5 py-4 transition hover:bg-neutral-100">
             <div className="flex items-center gap-2">
               <Trophy size={15} className="text-teal-600" />
               <span className="font-semibold text-sm text-neutral-700">
@@ -634,7 +670,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
           </button>
 
           {isExpanded && (
-            <div className="p-4 space-y-3">
+            <div className="p-5 space-y-3">
               {g.matches.map(m => {
                 const t1p1 = g.players.find(p => p.position === m.team1_pos1);
                 const t1p2 = g.players.find(p => p.position === m.team1_pos2);
@@ -650,8 +686,8 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
 
               {/* Preview de pontos */}
               {rules && g.matches.some(m => m.is_recorded) && (
-                <div className="pt-2 border-t border-neutral-100">
-                  <p className="text-xs font-bold text-neutral-500 uppercase tracking-wide mb-2">
+                <div className="border-t border-neutral-100 pt-3">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
                     {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -660,7 +696,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, assignedInSlo
                       .map(([pid, pts], idx, arr) => {
                         const pl = g.players.find(p => p.player_id === pid);
                         return (
-                          <div key={pid} className={`flex justify-between items-center rounded-xl px-3 py-2 text-sm border ${
+                          <div key={pid} className={`flex items-center justify-between rounded-2xl px-3 py-2 text-sm border ${
                             idx === 0 ? 'bg-emerald-50 border-emerald-200' :
                             idx === arr.length - 1 ? 'bg-red-50 border-red-200' :
                             'bg-neutral-50 border-neutral-100'
@@ -709,11 +745,11 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
   const recorded = match.is_recorded;
 
   return (
-    <div className={`rounded-xl p-3 border ${recorded ? 'bg-emerald-50 border-emerald-200' : 'bg-neutral-50 border-neutral-200'}`}>
-      <p className="text-[11px] font-bold text-neutral-400 uppercase tracking-wide mb-2">
+    <div className={`rounded-2xl border p-4 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.2)] ${recorded ? 'bg-emerald-50 border-emerald-200' : 'bg-neutral-50 border-neutral-200'}`}>
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-neutral-400">
         {isPt ? `Partida ${match.match_number}` : isEs ? `Partido ${match.match_number}` : `Match ${match.match_number}`}
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         {/* Team 1 */}
         <div className="flex-1 text-right space-y-0.5">
           <p className="text-xs font-semibold text-neutral-700 leading-tight truncate">{team1[0]}</p>
@@ -723,13 +759,13 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <input type="number" inputMode="numeric" min="0" max="7"
             value={s1} onChange={e => setS1(e.target.value)} disabled={disabled}
-            className={`w-14 h-14 text-center text-2xl font-extrabold rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-teal-500 transition ${
+            className={`h-14 w-14 rounded-2xl border-2 text-center text-2xl font-extrabold transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
               recorded ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-neutral-300 bg-white'
             } disabled:opacity-60`} />
           <span className="text-neutral-300 text-2xl font-bold">/</span>
           <input type="number" inputMode="numeric" min="0" max="7"
             value={s2} onChange={e => setS2(e.target.value)} disabled={disabled}
-            className={`w-14 h-14 text-center text-2xl font-extrabold rounded-xl border-2 focus:outline-none focus:ring-2 focus:ring-teal-500 transition ${
+            className={`h-14 w-14 rounded-2xl border-2 text-center text-2xl font-extrabold transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
               recorded ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-neutral-300 bg-white'
             } disabled:opacity-60`} />
         </div>
@@ -741,7 +777,7 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
         {/* Save btn */}
         {!disabled && s1 !== '' && s2 !== '' && (
           <button onClick={handleSave}
-            className={`p-3 rounded-xl flex-shrink-0 transition ${recorded ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300' : 'bg-teal-600 text-white shadow-sm hover:bg-teal-700'}`}>
+            className={`flex-shrink-0 rounded-2xl p-3 transition ${recorded ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300' : 'bg-teal-600 text-white shadow-[0_14px_28px_-20px_rgba(13,148,136,0.45)] hover:bg-teal-700'}`}>
             <Check size={18} />
           </button>
         )}
@@ -762,12 +798,12 @@ function StatusBadge({ status, locale }: { status: string; locale: string }) {
     ? (isPt ? 'Fechada' : isEs ? 'Cerrada' : 'Closed')
     : (isPt ? 'Rascunho' : isEs ? 'Borrador' : 'Draft');
   const cls = {
-    draft:   'bg-neutral-100 text-neutral-600',
-    running: 'bg-blue-100 text-blue-700',
-    closed:  'bg-emerald-100 text-emerald-700',
-  }[status] || 'bg-neutral-100 text-neutral-600';
+    draft:   'bg-neutral-900/5 text-neutral-600 ring-1 ring-neutral-900/6',
+    running: 'bg-sky-500/12 text-sky-700 ring-1 ring-sky-500/10',
+    closed:  'bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/10',
+  }[status] || 'bg-neutral-900/5 text-neutral-600 ring-1 ring-neutral-900/6';
   return (
-    <span className={`text-xs px-3 py-1.5 rounded-full font-semibold flex-shrink-0 ${cls}`}>
+    <span className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${cls}`}>
       {label}
     </span>
   );

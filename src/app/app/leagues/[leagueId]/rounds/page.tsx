@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList } from '@/components/Skeleton';
 import { Round, League, LeagueTimeSlot, Court } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { Plus, Calendar, ChevronRight, X, Clock, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy, MapPin } from 'lucide-react';
 
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -28,8 +28,8 @@ export default function RoundsPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalDate, setModalDate] = useState('');
-  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [selectedCourts, setSelectedCourts] = useState<Set<string>>(new Set());
+  const [physicalCourtByCourt, setPhysicalCourtByCourt] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -71,17 +71,15 @@ export default function RoundsPage() {
       setModalDate(next.toISOString().split('T')[0]);
     }
 
-    setSelectedSlots(new Set(slots.map((slot) => slot.id)));
     setSelectedCourts(new Set(courts.map((court) => court.id)));
+    setPhysicalCourtByCourt(
+      courts.reduce<Record<string, string>>((acc, court) => {
+        acc[court.id] = '';
+        return acc;
+      }, {})
+    );
     setShowModal(true);
   };
-
-  const toggleSlot = (id: string) => setSelectedSlots((current) => {
-    const next = new Set(current);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
-  });
 
   const toggleCourt = (id: string) => setSelectedCourts((current) => {
     const next = new Set(current);
@@ -90,7 +88,14 @@ export default function RoundsPage() {
     return next;
   });
 
-  const groupCount = selectedSlots.size * selectedCourts.size;
+  const setCourtPhysical = (courtId: string, value: string) => {
+    setPhysicalCourtByCourt((current) => ({
+      ...current,
+      [courtId]: value,
+    }));
+  };
+
+  const groupCount = selectedCourts.size;
 
   const createRound = async () => {
     if (slots.length === 0 || courts.length === 0) {
@@ -128,15 +133,16 @@ export default function RoundsPage() {
       if (!newRound) return;
 
       if (groupCount > 0) {
-        const activeSlots = slots.filter((slot) => selectedSlots.has(slot.id));
+        const defaultSlot = slots[0];
         const activeCourts = courts.filter((court) => selectedCourts.has(court.id));
-        const groups = activeSlots.flatMap((slot) => activeCourts.map((court) => ({
+        const groups = activeCourts.map((court) => ({
           round_id: newRound.id,
           league_id: leagueId,
-          time_slot_id: slot.id,
+          time_slot_id: defaultSlot.id,
           court_id: court.id,
+          physical_court_number: physicalCourtByCourt[court.id] ? parseInt(physicalCourtByCourt[court.id], 10) : null,
           is_cancelled: false,
-        })));
+        }));
 
         await runOrThrow(
           () => db.from('round_court_groups').insert(groups),
@@ -387,28 +393,6 @@ export default function RoundsPage() {
                 <input type="date" className="input-field" value={modalDate} onChange={(event) => setModalDate(event.target.value)} />
               </div>
 
-              {slots.length > 0 && (
-                <div>
-                  <label className="label-field">
-                    <Clock size={14} className="mr-1 inline" />
-                    {isPt ? 'Horarios' : isEs ? 'Horarios' : 'Time slots'}
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {slots.map((slot) => (
-                      <button
-                        key={slot.id}
-                        onClick={() => toggleSlot(slot.id)}
-                        className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
-                          selectedSlots.has(slot.id) ? 'bg-neutral-900 text-white shadow-[0_14px_28px_-18px_rgba(15,23,42,0.7)]' : 'bg-neutral-900/5 text-neutral-500 hover:bg-neutral-900/8'
-                        }`}
-                      >
-                        {slot.slot_time}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {courts.length > 0 && (
                 <div>
                   <label className="label-field">
@@ -428,14 +412,61 @@ export default function RoundsPage() {
                       </button>
                     ))}
                   </div>
+
+                  {selectedCourts.size > 0 && (
+                    <div className="mt-4 space-y-2">
+                      {courts.filter((court) => selectedCourts.has(court.id)).map((court) => (
+                        <div key={court.id} className="flex flex-col gap-2 rounded-3xl bg-neutral-900/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
+                            <MapPin size={14} className="text-orange-500" />
+                            {isPt ? `Nivel ${court.court_number}` : isEs ? `Nivel ${court.court_number}` : `Level ${court.court_number}`}
+                          </div>
+                          <select
+                            value={physicalCourtByCourt[court.id] || ''}
+                            onChange={(event) => setCourtPhysical(court.id, event.target.value)}
+                            className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700"
+                          >
+                            <option value="">
+                              {isPt ? 'Sem quadra fisica' : isEs ? 'Sin cancha fisica' : 'No physical court'}
+                            </option>
+                            {Array.from({ length: league?.physical_courts_count || 0 }, (_, index) => index + 1).map((num) => (
+                              <option key={num} value={num}>
+                                {isPt ? `Fisica ${num}` : isEs ? `Fisica ${num}` : `Physical ${num}`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
               <div className={`rounded-3xl px-4 py-4 text-sm font-semibold ${groupCount > 0 ? 'bg-teal-500/10 text-teal-700 ring-1 ring-teal-500/12' : 'bg-neutral-900/5 text-neutral-500 ring-1 ring-neutral-900/6'}`}>
                 {groupCount > 0
-                  ? `${groupCount} ${isPt ? 'grupos serao criados' : isEs ? 'grupos se crearan' : 'groups will be created'} (${selectedSlots.size} x ${selectedCourts.size})`
+                  ? `${groupCount} ${isPt ? 'jogos serao criados' : isEs ? 'juegos se crearan' : 'games will be created'}`
                   : isPt ? 'Nenhum grupo sera criado' : isEs ? 'No se crearan grupos' : 'No groups will be created'}
               </div>
+
+              {slots.length > 0 && (
+                <div className="rounded-3xl bg-neutral-900/5 px-4 py-4 text-xs leading-6 text-neutral-500">
+                  {isPt
+                    ? `Todos os jogos nascem com horario inicial em ${slots[0].slot_time}. Depois voce ajusta cada um individualmente na tela da rodada.`
+                    : isEs
+                      ? `Todos los juegos nacen con horario inicial en ${slots[0].slot_time}. Despues ajustas cada uno individualmente en la pantalla de la jornada.`
+                      : `All games start with ${slots[0].slot_time} as the initial time slot. You can adjust each one individually on the round screen.`}
+                </div>
+              )}
+
+              {selectedCourts.size > 0 && (
+                <div className="rounded-3xl bg-neutral-900/5 px-4 py-4 text-xs leading-6 text-neutral-500">
+                  {isPt
+                    ? 'A quadra fisica inicial tambem pode ser definida por jogo aqui. Se deixar vazio, voce escolhe depois.'
+                    : isEs
+                      ? 'La cancha fisica inicial tambien puede definirse por juego aqui. Si lo dejas vacio, la eliges despues.'
+                      : 'The initial physical court can also be set per game here. Leave it empty if you want to choose it later.'}
+                </div>
+              )}
 
               <button onClick={createRound} disabled={creating || !modalDate} className="btn-primary flex w-full items-center justify-center gap-2">
                 {creating ? (
