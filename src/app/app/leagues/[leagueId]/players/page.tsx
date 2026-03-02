@@ -53,10 +53,59 @@ export default function PlayersPage() {
   const [saving, setSaving] = useState(false);
   const [importLeagueId, setImportLeagueId] = useState('');
   const [importing, setImporting] = useState(false);
+  const [importCandidates, setImportCandidates] = useState<Player[]>([]);
+  const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
+  const [loadingImportCandidates, setLoadingImportCandidates] = useState(false);
 
   useEffect(() => {
     if (user && leagueId) load();
   }, [user, leagueId]);
+
+  useEffect(() => {
+    if (!user || !importLeagueId) {
+      setImportCandidates([]);
+      setSelectedImportIds([]);
+      setLoadingImportCandidates(false);
+      return;
+    }
+
+    let active = true;
+
+    const loadImportCandidates = async () => {
+      setLoadingImportCandidates(true);
+
+      const sourcePlayers = await runOrThrow(
+        () => db.from('players').select('*').eq('league_id', importLeagueId).eq('is_active', true).order('full_name'),
+        isPt ? 'Erro ao carregar jogadoras da liga de origem' : isEs ? 'Error al cargar jugadoras de la liga origen' : 'Failed to load source players'
+      );
+
+      if (!active) return;
+
+      const candidates = (sourcePlayers as Player[]) || [];
+      const normalizedExisting = new Set(
+        players.map(player => player.full_name.trim().toLocaleLowerCase())
+      );
+
+      setImportCandidates(candidates);
+      setSelectedImportIds(
+        candidates
+          .filter(player => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
+          .map(player => player.id)
+      );
+      setLoadingImportCandidates(false);
+    };
+
+    loadImportCandidates().catch(() => {
+      if (!active) return;
+      setImportCandidates([]);
+      setSelectedImportIds([]);
+      setLoadingImportCandidates(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [user, importLeagueId, players, db, runOrThrow, isPt, isEs]);
 
   const load = async () => {
     const [{ data: playerData }, { data: leagueData }, { data: leaguesData }] = await Promise.all([
@@ -190,19 +239,26 @@ export default function PlayersPage() {
       return;
     }
 
+    if (selectedImportIds.length === 0) {
+      toast.warning(
+        isPt
+          ? 'Selecione ao menos uma jogadora elegivel para importar.'
+          : isEs
+            ? 'Selecciona al menos una jugadora elegible para importar.'
+            : 'Select at least one eligible player to import.'
+      );
+      return;
+    }
+
     setImporting(true);
     try {
-      const sourcePlayers = await runOrThrow(
-        () => db.from('players').select('*').eq('league_id', importLeagueId).eq('is_active', true).order('full_name'),
-        isPt ? 'Erro ao carregar jogadoras da liga de origem' : isEs ? 'Error al cargar jugadoras de la liga origen' : 'Failed to load source players'
-      );
-
       const normalizedExisting = new Set(
         players.map(player => player.full_name.trim().toLocaleLowerCase())
       );
 
-      const toInsert = (sourcePlayers || [])
-        .filter((player: Player) => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
+      const toInsert = importCandidates
+        .filter((player) => selectedImportIds.includes(player.id))
+        .filter((player) => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
         .map((player: Player) => ({
           league_id: leagueId,
           owner_user_id: user!.id,
@@ -236,10 +292,21 @@ export default function PlayersPage() {
             ? `${toInsert.length} jugadora(s) importada(s).`
             : `${toInsert.length} player(s) imported.`
       );
+      setImportLeagueId('');
+      setImportCandidates([]);
+      setSelectedImportIds([]);
       load();
     } finally {
       setImporting(false);
     }
+  };
+
+  const toggleImportCandidate = (playerId: string) => {
+    setSelectedImportIds((current) => (
+      current.includes(playerId)
+        ? current.filter((id) => id !== playerId)
+        : [...current, playerId]
+    ));
   };
 
   const filtered = players.filter((player) => {
@@ -371,6 +438,27 @@ export default function PlayersPage() {
       : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
   };
 
+  const copyJoinLink = async () => {
+    if (typeof window === 'undefined') return;
+
+    const url = `${window.location.origin}/join/${leagueId}`;
+    let copied = false;
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(url); copied = true; } catch {}
+    }
+    if (!copied) {
+      const ta = Object.assign(document.createElement('textarea'), { value: url, readOnly: true, style: 'position:fixed;left:-9999px' });
+      document.body.appendChild(ta);
+      ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+
+    copied
+      ? toast.success(isPt ? 'Link de cadastro copiado.' : isEs ? 'Link de registro copiado.' : 'Join link copied.')
+      : toast.error(isPt ? 'Nao foi possivel copiar o link agora.' : isEs ? 'No fue posible copiar el link ahora.' : 'Could not copy the link right now.');
+  };
+
   const formPhoneReady = !form.phone || !!toWhatsAppPhone(form.phone);
 
   return (
@@ -411,6 +499,13 @@ export default function PlayersPage() {
             >
               <Download size={16} />
               {isPt ? 'Exportar CSV' : isEs ? 'Exportar CSV' : 'Export CSV'}
+            </button>
+            <button
+              onClick={copyJoinLink}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-500/15 lg:w-auto"
+            >
+              <Copy size={16} />
+              {isPt ? 'Copiar link cadastro' : isEs ? 'Copiar link registro' : 'Copy join link'}
             </button>
             <button onClick={openNew} className="btn-primary inline-flex w-full items-center justify-center gap-2 lg:w-auto">
               <Plus size={16} />
@@ -465,40 +560,99 @@ export default function PlayersPage() {
 
       {availableLeagues.length > 0 && (
         <section className="card p-4 sm:p-5">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-            <div className="flex-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
-                {isPt ? 'Importar base' : isEs ? 'Importar base' : 'Import roster'}
-              </p>
-              <p className="mt-1 text-sm text-neutral-600">
-                {isPt
-                  ? 'Puxe jogadoras ativas de outra liga sua. Nomes repetidos nesta liga sao ignorados.'
-                  : isEs
-                    ? 'Trae jugadoras activas de otra liga tuya. Los nombres repetidos en esta liga se ignoran.'
-                    : 'Pull active players from another one of your leagues. Duplicate names in this league are skipped.'}
-              </p>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <div className="flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
+                  {isPt ? 'Importar base' : isEs ? 'Importar base' : 'Import roster'}
+                </p>
+                <p className="mt-1 text-sm text-neutral-600">
+                  {isPt
+                    ? 'Puxe jogadoras ativas de outra liga sua. Nomes repetidos nesta liga ficam bloqueados.'
+                    : isEs
+                      ? 'Trae jugadoras activas de otra liga tuya. Los nombres repetidos en esta liga quedan bloqueados.'
+                      : 'Pull active players from another one of your leagues. Duplicate names in this league are blocked.'}
+                </p>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row lg:w-auto">
+                <select
+                  className="input-field min-w-[240px]"
+                  value={importLeagueId}
+                  onChange={(event) => setImportLeagueId(event.target.value)}
+                >
+                  <option value="">{isPt ? 'Selecionar liga de origem' : isEs ? 'Seleccionar liga origen' : 'Select source league'}</option>
+                  {availableLeagues.map((item) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={importPlayersFromLeague}
+                  disabled={!importLeagueId || importing || loadingImportCandidates || selectedImportIds.length === 0}
+                  className="inline-flex items-center justify-center rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:opacity-60"
+                >
+                  {importing
+                    ? (isPt ? 'Importando...' : isEs ? 'Importando...' : 'Importing...')
+                    : (isPt ? 'Importar selecionadas' : isEs ? 'Importar seleccionadas' : 'Import selected')}
+                </button>
+              </div>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row lg:w-auto">
-              <select
-                className="input-field min-w-[240px]"
-                value={importLeagueId}
-                onChange={(event) => setImportLeagueId(event.target.value)}
-              >
-                <option value="">{isPt ? 'Selecionar liga de origem' : isEs ? 'Seleccionar liga origen' : 'Select source league'}</option>
-                {availableLeagues.map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
-                ))}
-              </select>
-              <button
-                onClick={importPlayersFromLeague}
-                disabled={!importLeagueId || importing}
-                className="inline-flex items-center justify-center rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:opacity-60"
-              >
-                {importing
-                  ? (isPt ? 'Importando...' : isEs ? 'Importando...' : 'Importing...')
-                  : (isPt ? 'Importar ativas' : isEs ? 'Importar activas' : 'Import active')}
-              </button>
-            </div>
+
+            {importLeagueId && (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+                {loadingImportCandidates ? (
+                  <p className="text-sm text-neutral-500">
+                    {isPt ? 'Carregando jogadoras da liga...' : isEs ? 'Cargando jugadoras de la liga...' : 'Loading source players...'}
+                  </p>
+                ) : importCandidates.length === 0 ? (
+                  <p className="text-sm text-neutral-500">
+                    {isPt ? 'Essa liga nao tem jogadoras ativas para importar.' : isEs ? 'Esta liga no tiene jugadoras activas para importar.' : 'This league has no active players to import.'}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                      <span>{isPt ? 'Selecionar jogadoras' : isEs ? 'Seleccionar jugadoras' : 'Select players'}</span>
+                      <span className="rounded-full bg-white px-2 py-1 ring-1 ring-neutral-200">
+                        {selectedImportIds.length}/{importCandidates.length}
+                      </span>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {importCandidates.map((candidate) => {
+                        const isDuplicate = players.some(
+                          (player) => player.full_name.trim().toLocaleLowerCase() === candidate.full_name.trim().toLocaleLowerCase()
+                        );
+                        const checked = selectedImportIds.includes(candidate.id);
+
+                        return (
+                          <label
+                            key={candidate.id}
+                            className={`flex items-center gap-3 rounded-2xl border px-3 py-2 text-sm ${
+                              isDuplicate
+                                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                : checked
+                                  ? 'border-teal-200 bg-white text-neutral-800'
+                                  : 'border-neutral-200 bg-white text-neutral-700'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={isDuplicate}
+                              onChange={() => toggleImportCandidate(candidate.id)}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{candidate.full_name}</span>
+                            {isDuplicate && (
+                              <span className="text-[10px] font-bold uppercase tracking-[0.16em]">
+                                {isPt ? 'Duplicada' : isEs ? 'Duplicada' : 'Duplicate'}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </section>
       )}

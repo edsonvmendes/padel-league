@@ -9,6 +9,7 @@ const translations: Record<string, Record<Locale, string>> = {
   // Navigation
   dashboard:      { en: 'Dashboard',    es: 'Panel',          pt: 'Painel' },
   leagues:        { en: 'Leagues',      es: 'Ligas',          pt: 'Ligas' },
+  manual:         { en: 'Manual',       es: 'Manual',         pt: 'Manual' },
   players:        { en: 'Players',      es: 'Jugadoras',      pt: 'Jogadoras' },
   rounds:         { en: 'Rounds',       es: 'Jornadas',       pt: 'Rodadas' },
   ranking:        { en: 'Ranking',      es: 'Ranking',        pt: 'Ranking' },

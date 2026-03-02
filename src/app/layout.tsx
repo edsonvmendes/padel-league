@@ -4,9 +4,12 @@ import { AuthProvider } from '@/components/AuthProvider';
 import { ToastProvider } from '@/components/ToastProvider';
 import { ConfirmProvider } from '@/components/ConfirmProvider';
 
+const metadataBase = new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000');
+
 export const metadata: Metadata = {
   title: 'Padel League',
   description: 'Sistema de gerenciamento de ligas de padel',
+  metadataBase,
   icons: {
     icon: '/logo.png',
     shortcut: '/logo.png',

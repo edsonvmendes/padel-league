@@ -6,7 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { t } from '@/lib/i18n';
 import { BrandMark } from '@/components/BrandMark';
 import { ProductSignature } from '@/components/ProductSignature';
-import { Home, Users, Calendar, Settings, LogOut, Menu, X, Trophy } from 'lucide-react';
+import { Home, Users, Calendar, Settings, LogOut, Menu, X, Trophy, BookOpen } from 'lucide-react';
 
 interface NavItem {
   label: string;
@@ -45,6 +45,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const mainNav: NavItem[] = [
     { label: t('dashboard', locale), href: '/app', icon: <Home size={20} /> },
     { label: t('leagues', locale), href: '/app/leagues', icon: <Calendar size={20} /> },
+    { label: t('manual', locale), href: '/app/manual', icon: <BookOpen size={20} /> },
   ];
 
   const leagueNav: NavItem[] = leagueId
