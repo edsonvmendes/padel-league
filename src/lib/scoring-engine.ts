@@ -43,11 +43,16 @@ export function calculateGroupPoints(
   }
   
   // Calculate points from recorded matches for present players
-  const recordedMatches = matches.filter(m => m.is_recorded);
+  const recordedMatches = matches.filter(
+    m => m.is_recorded || (m.score_team1 !== null && m.score_team2 !== null)
+  );
   
   recordedMatches.forEach(match => {
     const team1Score = match.score_team1 ?? 0;
     const team2Score = match.score_team2 ?? 0;
+    const scoreDiff = Math.abs(team1Score - team2Score);
+    const team1Delta = team1Score > team2Score ? scoreDiff : team1Score < team2Score ? -scoreDiff : 0;
+    const team2Delta = team2Score > team1Score ? scoreDiff : team2Score < team1Score ? -scoreDiff : 0;
     
     // Find players by position
     const team1Players = players.filter(
@@ -59,13 +64,13 @@ export function calculateGroupPoints(
     
     team1Players.forEach(p => {
       if (p.attendance !== 'absent') {
-        pointsMap.set(p.player_id, (pointsMap.get(p.player_id) || 0) + team1Score);
+        pointsMap.set(p.player_id, (pointsMap.get(p.player_id) || 0) + team1Delta);
       }
     });
     
     team2Players.forEach(p => {
       if (p.attendance !== 'absent') {
-        pointsMap.set(p.player_id, (pointsMap.get(p.player_id) || 0) + team2Score);
+        pointsMap.set(p.player_id, (pointsMap.get(p.player_id) || 0) + team2Delta);
       }
     });
   });

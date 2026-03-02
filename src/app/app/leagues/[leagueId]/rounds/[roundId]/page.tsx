@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { Round, League, LeagueTimeSlot, Court, RoundCourtGroup, RoundCourtPlayer, Match, Player, Rules } from '@/types/database';
 import { t } from '@/lib/i18n';
 import { parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
-import { MATCH_PAIRINGS, calculateGroupPoints, isValidScore, generateWhatsAppMessage } from '@/lib/scoring-engine';
+import { MATCH_PAIRINGS, calculateGroupPoints, isValidScore } from '@/lib/scoring-engine';
 import {
   ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus, Bell,
   Trophy, ChevronDown, ChevronUp, AlertTriangle, XCircle,
@@ -47,6 +47,30 @@ export default function RoundDetailPage() {
   const isMutating = startingRound || closingRound;
 
   const getActionErrorMessage = (_error: any, fallback: string) => fallback;
+  const getPhysicalCourtConflictMessage = (targetSlotId?: string) => {
+    const sameSlot = targetSlotId === undefined;
+
+    if (isPt) {
+      return sameSlot
+        ? 'Essa quadra fisica ja esta ocupada neste horario. Se quiser reutiliza-la em outro horario, troque o horario primeiro.'
+        : 'Essa quadra fisica ja esta ocupada no horario selecionado. Escolha outra quadra fisica ou libere esse horario antes.';
+    }
+
+    if (isEs) {
+      return sameSlot
+        ? 'Esta cancha fisica ya esta ocupada en este horario. Si quieres reutilizarla en otro horario, cambia primero el horario.'
+        : 'Esta cancha fisica ya esta ocupada en el horario seleccionado. Elige otra cancha fisica o libera ese horario antes.';
+    }
+
+    return sameSlot
+      ? 'This physical court is already in use in this time slot. If you want to reuse it in another slot, change the time slot first.'
+      : 'This physical court is already in use in the selected time slot. Choose another physical court or free that slot first.';
+  };
+  const getPhysicalCourtAutoMoveMessage = (slotTime: string) => {
+    if (isPt) return `Quadra fisica movida automaticamente para o horario ${slotTime} para evitar conflito.`;
+    if (isEs) return `Cancha fisica movida automaticamente al horario ${slotTime} para evitar conflicto.`;
+    return `Physical court was moved automatically to ${slotTime} to avoid a conflict.`;
+  };
 
   useEffect(() => { if (user) loadAll(); }, [user, roundId]);
 
@@ -199,7 +223,14 @@ export default function RoundDetailPage() {
     if (!isValidScore(score1) || !isValidScore(score2)) return;
     setActionError(null);
     try {
-      await runOrThrow(() => db.from('matches').update({ score_team1: score1, score_team2: score2, is_recorded: true }).eq('id', matchId));
+      await runOrThrow(() => db.from('matches').update({ score_team1: score1, score_team2: score2, is_recorded: false }).eq('id', matchId));
+      toast.success(
+        isPt
+          ? 'Placar salvo como rascunho. Ele sera confirmado ao fechar a rodada.'
+          : isEs
+            ? 'Marcador guardado como borrador. Se confirmara al cerrar la jornada.'
+            : 'Score saved as draft. It will be confirmed when the round is closed.'
+      );
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(
@@ -209,13 +240,86 @@ export default function RoundDetailPage() {
     }
   };
 
+  const setSubstituteName = async (cpId: string, substituteName: string) => {
+    if (isMutating) return;
+    setActionError(null);
+    try {
+      await runOrThrow(
+        () => db.from('round_court_players').update({ substitute_name: substituteName.trim() || null }).eq('id', cpId),
+        isPt ? 'Erro ao salvar suplente' : isEs ? 'Error al guardar suplente' : 'Failed to save substitute'
+      );
+      loadAll();
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt ? 'NÃ£o foi possÃ­vel salvar o nome da suplente.' : isEs ? 'No se pudo guardar el nombre de la suplente.' : 'Could not save the substitute name.'
+      ));
+    }
+  };
+
   const setPhysicalCourt = async (groupId: string, physicalNum: number | null) => {
     if (isMutating) return;
     setActionError(null);
+    const currentGroup = groups.find(g => g.group.id === groupId)?.group;
+    if (!currentGroup) return;
+
+    if (physicalNum !== null) {
+      const slotConflict = groups.find(g =>
+        g.group.id !== groupId
+        && g.group.time_slot_id === currentGroup.time_slot_id
+        && g.group.physical_court_number === physicalNum
+      );
+
+      if (slotConflict) {
+        const fallbackSlot = slots.find(slot => !groups.some(g =>
+          g.group.id !== groupId
+          && g.group.time_slot_id === slot.id
+          && g.group.physical_court_number === physicalNum
+        ));
+
+        if (!fallbackSlot) {
+          const message = getPhysicalCourtConflictMessage();
+          setActionError(message);
+          toast.warning(message);
+          return;
+        }
+
+        try {
+          await runOrThrow(() => db.from('round_court_groups').update({
+            physical_court_number: physicalNum,
+            time_slot_id: fallbackSlot.id,
+          }).eq('id', groupId));
+          toast.success(getPhysicalCourtAutoMoveMessage(fallbackSlot.slot_time));
+          loadAll();
+          return;
+        } catch (error: any) {
+          if (error?.code === '23505') {
+            const message = getPhysicalCourtConflictMessage();
+            setActionError(message);
+            toast.warning(message);
+            return;
+          }
+
+          setActionError(getActionErrorMessage(
+            error,
+            isPt ? 'NÃ£o foi possÃ­vel atualizar a quadra fÃ­sica.' : isEs ? 'No se pudo actualizar la cancha asignada.' : 'Could not update the physical court.'
+          ));
+          return;
+        }
+      }
+    }
+
     try {
       await runOrThrow(() => db.from('round_court_groups').update({ physical_court_number: physicalNum }).eq('id', groupId));
       loadAll();
     } catch (error: any) {
+      if (error?.code === '23505') {
+        const message = getPhysicalCourtConflictMessage();
+        setActionError(message);
+        toast.warning(message);
+        return;
+      }
+
       setActionError(getActionErrorMessage(
         error,
         isPt ? 'Não foi possível atualizar a quadra física.' : isEs ? 'No se pudo actualizar la cancha asignada.' : 'Could not update the physical court.'
@@ -226,10 +330,35 @@ export default function RoundDetailPage() {
   const setGroupSlot = async (groupId: string, slotId: string) => {
     if (isMutating) return;
     setActionError(null);
+    const currentGroup = groups.find(g => g.group.id === groupId)?.group;
+    if (!currentGroup) return;
+
+    if (currentGroup.physical_court_number !== null) {
+      const slotConflict = groups.find(g =>
+        g.group.id !== groupId
+        && g.group.time_slot_id === slotId
+        && g.group.physical_court_number === currentGroup.physical_court_number
+      );
+
+      if (slotConflict) {
+        const message = getPhysicalCourtConflictMessage(slotId);
+        setActionError(message);
+        toast.warning(message);
+        return;
+      }
+    }
+
     try {
       await runOrThrow(() => db.from('round_court_groups').update({ time_slot_id: slotId }).eq('id', groupId));
       loadAll();
     } catch (error: any) {
+      if (error?.code === '23505' && currentGroup.physical_court_number !== null) {
+        const message = getPhysicalCourtConflictMessage(slotId);
+        setActionError(message);
+        toast.warning(message);
+        return;
+      }
+
       setActionError(getActionErrorMessage(
         error,
         isPt ? 'Não foi possível atualizar o horário do jogo.' : isEs ? 'No se pudo actualizar el horario del juego.' : 'Could not update the match time.'
@@ -271,6 +400,18 @@ export default function RoundDetailPage() {
     setActionError(null);
     setClosingRound(true);
     try {
+      const pendingMatchIds = groups
+        .flatMap(group => group.matches)
+        .filter(match => match.score_team1 !== null && match.score_team2 !== null && !match.is_recorded)
+        .map(match => match.id);
+
+      if (pendingMatchIds.length > 0) {
+        await runOrThrow(
+          () => db.from('matches').update({ is_recorded: true }).in('id', pendingMatchIds),
+          isPt ? 'Erro ao confirmar placares' : isEs ? 'Error al confirmar marcadores' : 'Failed to confirm scores'
+        );
+      }
+
       await runOrThrow(
         () => db.rpc('close_round', { p_round_id: roundId }),
         isPt ? 'Erro ao fechar rodada' : isEs ? 'Error al cerrar jornada' : 'Failed to close round'
@@ -290,16 +431,43 @@ export default function RoundDetailPage() {
   // ── WhatsApp ────────────────────────────────────────────────
   const buildRoundWhatsAppMessage = async () => {
     if (!league || !round) return null;
-    const { data: rankings } = await run(() =>
-      db.from('league_rankings').select('*, player:players(full_name)').eq('league_id', leagueId).order('total_points', { ascending: false })
-    );
-    const rankData = (rankings || []).map((r: any, i: number) => ({ name: r.player?.full_name || '?', points: r.total_points, rank: i + 1 }));
-    const nextGroups = groups.filter(g => g.slot).map(g => ({
-      timeSlot: g.slot.slot_time,
-      courtNumber: g.court.court_number,
-      players: g.players.map(p => p.playerData?.full_name || '?'),
-    }));
-    return generateWhatsAppMessage(league.name, round.number, rankData, nextGroups, locale as any);
+    const date = new Date(`${round.round_date}T12:00:00`);
+    const dateLabel = Number.isNaN(date.getTime())
+      ? round.round_date
+      : date.toLocaleDateString(isPt ? 'pt-BR' : isEs ? 'es-ES' : 'en-US');
+
+    const title = [
+      `*${league.name.toUpperCase()}*`,
+      isPt
+        ? `RODADA ${round.number} - ${dateLabel}`
+        : isEs
+          ? `JORNADA ${round.number} - ${dateLabel}`
+          : `ROUND ${round.number} - ${dateLabel}`,
+      '',
+    ];
+
+    const sortedGroups = [...groups].sort((a, b) => {
+      const slotDiff = (a.slot?.sort_order || 0) - (b.slot?.sort_order || 0);
+      return slotDiff !== 0 ? slotDiff : (a.court?.court_number || 0) - (b.court?.court_number || 0);
+    });
+
+    const body = sortedGroups.flatMap((group) => {
+      const sectionTitle = `*${isPt ? 'CANCHA' : isEs ? 'CANCHA' : 'COURT'} ${group.court?.court_number || '-'}*`;
+      const scheduleLine = `${isPt ? 'HORARIO' : isEs ? 'HORARIO' : 'TIME'}: ${group.slot?.slot_time || '--:--'} | ${isPt ? 'CANCHAS' : isEs ? 'CANCHAS' : 'PHYS'}: ${group.group.physical_court_number || '-'}`;
+      const columnLine = `${isPt ? 'JOGADORAS' : isEs ? 'JUGADORAS' : 'PLAYERS'} | ${isPt ? 'SUPLENTES' : isEs ? 'SUPLENTES' : 'SUBSTITUTES'}`;
+      const players = [1, 2, 3, 4].map((position) => {
+        const player = group.players.find((entry) => entry.position === position);
+        const name = player?.playerData?.full_name || '-';
+        const substitute = player?.attendance === 'present'
+          ? 'ok'
+          : (player?.substitute_name?.trim() || (isPt ? 'pendente' : isEs ? 'pendiente' : 'pending'));
+        return `${position}. ${name} | ${substitute}`;
+      });
+
+      return [sectionTitle, scheduleLine, columnLine, ...players, ''];
+    });
+
+    return [...title, ...body].join('\n').trim();
   };
 
   const copyWhatsApp = async () => {
@@ -606,6 +774,7 @@ export default function RoundDetailPage() {
             onAssignPlayer={assignPlayer}
             onRemovePlayer={removePlayer}
             onToggleAttendance={toggleAttendance}
+            onSetSubstituteName={setSubstituteName}
             onSaveScore={saveScore}
             onSetPhysical={setPhysicalCourt}
             onSetSlot={setGroupSlot}
@@ -620,7 +789,7 @@ export default function RoundDetailPage() {
 // ─────────────────────────────────────────────────────────────
 // COURT CARD
 // ─────────────────────────────────────────────────────────────
-function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
+function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSetSubstituteName, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
   g: GroupWithDetails; isClosed: boolean; physicalCourtsCount: number;
   allPlayers: Player[]; allGroups: GroupWithDetails[]; slots: LeagueTimeSlot[]; rules: Rules | null;
   expandedGroup: string | null; disabled: boolean; locale: string;
@@ -628,6 +797,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
   onAssignPlayer: (gId: string, pos: number, pId: string) => void;
   onRemovePlayer: (cpId: string) => void;
   onToggleAttendance: (cpId: string, att: string) => void;
+  onSetSubstituteName: (cpId: string, substituteName: string) => void;
   onSaveScore: (mId: string, s1: number, s2: number) => void;
   onSetPhysical: (gId: string, n: number | null) => void;
   onSetSlot: (gId: string, slotId: string) => void;
@@ -718,7 +888,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
       title,
       isPt ? `Horario: ${g.slot?.slot_time || '-'}` : isEs ? `Horario: ${g.slot?.slot_time || '-'}` : `Time: ${g.slot?.slot_time || '-'}`,
       '',
-      ...players.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}`),
+      ...players.map((player) => `${player.playerData?.full_name || '?'} - ${attendanceLabel(player.attendance)}${player.substitute_name ? ` - ${player.substitute_name}` : ''}`),
       '',
       cta,
     ].join('\n');
@@ -888,8 +1058,21 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                               ? (isPt ? 'confirmar falta' : isEs ? 'confirmar falta' : 'confirm absence')
                               : cp.attendance === 'substitute'
                                 ? (isPt ? 'chamar sub' : isEs ? 'llamar suplente' : 'call sub')
-                                : (isPt ? 'confirmar presenca' : isEs ? 'confirmar asistencia' : 'confirm attendance')}
+                              : (isPt ? 'confirmar presenca' : isEs ? 'confirmar asistencia' : 'confirm attendance')}
                           </button>
+                        )}
+                        {cp.attendance !== 'present' && (
+                          <input
+                            type="text"
+                            defaultValue={cp.substitute_name || ''}
+                            placeholder={isPt ? 'Nome da suplente' : isEs ? 'Nombre suplente' : 'Substitute name'}
+                            onBlur={e => {
+                              if ((cp.substitute_name || '') !== e.target.value) {
+                                onSetSubstituteName(cp.id, e.target.value);
+                              }
+                            }}
+                            className="w-full rounded-xl border border-neutral-200 bg-white px-2 py-1.5 text-[10px] text-neutral-700 placeholder:text-neutral-400"
+                          />
                         )}
                         <button onClick={() => onRemovePlayer(cp.id)}
                           className="text-[10px] text-neutral-400 hover:text-red-500 flex items-center justify-center gap-0.5">
@@ -1008,7 +1191,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
               })}
 
               {/* Preview de pontos */}
-              {rules && g.matches.some(m => m.is_recorded) && (
+              {rules && g.matches.some(m => m.is_recorded || (m.score_team1 !== null && m.score_team2 !== null)) && (
                 <div className="border-t border-neutral-100 pt-3">
                   <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">
                     {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
@@ -1066,9 +1249,16 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
   };
 
   const recorded = match.is_recorded;
+  const hasDraft = !recorded && match.score_team1 !== null && match.score_team2 !== null;
 
   return (
-    <div className={`rounded-2xl border p-4 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.2)] ${recorded ? 'bg-emerald-50 border-emerald-200' : 'bg-neutral-50 border-neutral-200'}`}>
+    <div className={`rounded-2xl border p-4 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.2)] ${
+      recorded
+        ? 'bg-emerald-50 border-emerald-200'
+        : hasDraft
+          ? 'bg-amber-50 border-amber-200'
+          : 'bg-neutral-50 border-neutral-200'
+    }`}>
       <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-neutral-400">
         {isPt ? `Partida ${match.match_number}` : isEs ? `Partido ${match.match_number}` : `Match ${match.match_number}`}
       </p>
@@ -1083,13 +1273,21 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
           <input type="number" inputMode="numeric" min="0" max="7"
             value={s1} onChange={e => setS1(e.target.value)} disabled={disabled}
             className={`h-14 w-14 rounded-2xl border-2 text-center text-2xl font-extrabold transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
-              recorded ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-neutral-300 bg-white'
+              recorded
+                ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                : hasDraft
+                  ? 'border-amber-300 bg-amber-100 text-amber-800'
+                  : 'border-neutral-300 bg-white'
             } disabled:opacity-60`} />
           <span className="text-neutral-300 text-2xl font-bold">/</span>
           <input type="number" inputMode="numeric" min="0" max="7"
             value={s2} onChange={e => setS2(e.target.value)} disabled={disabled}
             className={`h-14 w-14 rounded-2xl border-2 text-center text-2xl font-extrabold transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
-              recorded ? 'border-emerald-300 bg-emerald-100 text-emerald-800' : 'border-neutral-300 bg-white'
+              recorded
+                ? 'border-emerald-300 bg-emerald-100 text-emerald-800'
+                : hasDraft
+                  ? 'border-amber-300 bg-amber-100 text-amber-800'
+                  : 'border-neutral-300 bg-white'
             } disabled:opacity-60`} />
         </div>
         {/* Team 2 */}
@@ -1100,7 +1298,13 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
         {/* Save btn */}
         {!disabled && s1 !== '' && s2 !== '' && (
           <button onClick={handleSave}
-            className={`flex w-full flex-shrink-0 items-center justify-center rounded-2xl p-3 transition sm:w-auto ${recorded ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300' : 'bg-teal-600 text-white shadow-[0_14px_28px_-20px_rgba(13,148,136,0.45)] hover:bg-teal-700'}`}>
+            className={`flex w-full flex-shrink-0 items-center justify-center rounded-2xl p-3 transition sm:w-auto ${
+              recorded
+                ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300'
+                : hasDraft
+                  ? 'bg-amber-200 text-amber-800 hover:bg-amber-300'
+                  : 'bg-teal-600 text-white shadow-[0_14px_28px_-20px_rgba(13,148,136,0.45)] hover:bg-teal-700'
+            }`}>
             <Check size={18} />
           </button>
         )}
