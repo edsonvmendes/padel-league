@@ -13,14 +13,17 @@ type RankingEntry = {
   points: number;
   previousPoints: number;
   pointsDelta: number;
+  history: number[];
   position: number;
   previousPosition: number | null;
   movement: number | null;
+  isTied: boolean;
 };
 
 type RankingSnapshot = {
   entries: RankingEntry[];
   topScore: number;
+  selectedRounds: Round[];
 };
 
 export default function LeagueRankingPage() {
@@ -80,7 +83,7 @@ export default function LeagueRankingPage() {
       : roundsOrdered.findIndex((round) => round.id === selectedRoundId);
 
     if (targetIndex < 0) {
-      return { snapshot: { entries: [], topScore: 0 }, comparedRound: null };
+      return { snapshot: { entries: [], topScore: 0, selectedRounds: [] }, comparedRound: null };
     }
 
     const selectedRounds = roundsOrdered.slice(0, targetIndex + 1);
@@ -100,10 +103,14 @@ export default function LeagueRankingPage() {
 
     const selectedTotals = new Map<string, number>();
     const comparisonTotals = new Map<string, number>();
+    const pointsByRound = new Map<string, Map<string, number>>();
 
     roundPoints.forEach((entry) => {
       if (selectedIds.has(entry.round_id)) {
         selectedTotals.set(entry.player_id, (selectedTotals.get(entry.player_id) || 0) + entry.points);
+        const roundBucket = pointsByRound.get(entry.round_id) || new Map<string, number>();
+        roundBucket.set(entry.player_id, (roundBucket.get(entry.player_id) || 0) + entry.points);
+        pointsByRound.set(entry.round_id, roundBucket);
       }
       if (comparisonIds.has(entry.round_id)) {
         comparisonTotals.set(entry.player_id, (comparisonTotals.get(entry.player_id) || 0) + entry.points);
@@ -128,10 +135,16 @@ export default function LeagueRankingPage() {
       .map((player) => {
         const points = selectedTotals.get(player.id) || 0;
         const previousPoints = comparisonTotals.get(player.id) || 0;
+        let running = 0;
+        const history = selectedRounds.map((round) => {
+          running += pointsByRound.get(round.id)?.get(player.id) || 0;
+          return running;
+        });
         return {
           player,
           points,
           previousPoints,
+          history,
         };
       })
       .sort((a, b) => b.points - a.points || a.player.full_name.localeCompare(b.player.full_name))
@@ -143,11 +156,18 @@ export default function LeagueRankingPage() {
           points: entry.points,
           previousPoints: entry.previousPoints,
           pointsDelta: entry.points - entry.previousPoints,
+          history: entry.history,
           position,
           previousPosition,
           movement: previousPosition ? previousPosition - position : null,
+          isTied: false,
         };
       });
+
+    const entriesWithTies = entries.map((entry, index, list) => ({
+      ...entry,
+      isTied: (list[index - 1]?.points === entry.points) || (list[index + 1]?.points === entry.points),
+    }));
 
     let comparedRound: Round | null = null;
     if (comparisonRounds.length > 0) {
@@ -156,8 +176,9 @@ export default function LeagueRankingPage() {
 
     return {
       snapshot: {
-        entries,
-        topScore: entries[0]?.points || 0,
+        entries: entriesWithTies,
+        topScore: entriesWithTies[0]?.points || 0,
+        selectedRounds,
       },
       comparedRound,
     };
@@ -165,6 +186,7 @@ export default function LeagueRankingPage() {
 
   const entries = rankingData.snapshot.entries;
   const topScore = rankingData.snapshot.topScore;
+  const selectedRounds = rankingData.snapshot.selectedRounds;
   const podium = entries.slice(0, 3);
   const remaining = entries.slice(3);
   const activePlayers = players.filter((player) => player.is_active).length;
@@ -244,6 +266,34 @@ export default function LeagueRankingPage() {
           tone="amber"
         />
       </div>
+
+      {closedRounds.length > 0 && (
+        <div className="card p-4 sm:p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+            {isPt ? 'Linha do tempo' : isEs ? 'Linea de tiempo' : 'Timeline'}
+          </p>
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {closedRounds.map((round) => {
+              const isInsideScope = selectedRounds.some((item) => item.id === round.id);
+              const isBaseline = comparedRound?.id === round.id;
+              return (
+                <div
+                  key={round.id}
+                  className={`flex-shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold ${
+                    isBaseline
+                      ? 'bg-amber-500/12 text-amber-700 ring-1 ring-amber-500/10'
+                      : isInsideScope
+                        ? 'bg-teal-500/12 text-teal-700 ring-1 ring-teal-500/10'
+                        : 'bg-neutral-900/5 text-neutral-500 ring-1 ring-neutral-900/6'
+                  }`}
+                >
+                  {isPt ? `R${round.number}` : isEs ? `J${round.number}` : `R${round.number}`}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="card p-4 sm:p-5">
         <div className="grid gap-3 lg:grid-cols-2">
@@ -361,6 +411,10 @@ export default function LeagueRankingPage() {
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {!entry.player.is_active && <InactiveBadge locale={locale} />}
                       <PointsDeltaBadge entry={entry} locale={locale} compact />
+                      {entry.isTied && <TieBadge locale={locale} compact />}
+                    </div>
+                    <div className="mt-3">
+                      <SparklineBars values={entry.history} tone={entry.position === 1 ? 'amber' : 'teal'} />
                     </div>
                     <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
                       {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
@@ -378,12 +432,14 @@ export default function LeagueRankingPage() {
                 title={isPt ? 'Zona de promocao' : isEs ? 'Zona de ascenso' : 'Promotion zone'}
                 players={entries.slice(0, Math.max(rules.promotion_count, 0))}
                 emptyLabel={isPt ? 'Nenhuma promocao configurada' : isEs ? 'Sin ascenso configurado' : 'No promotion configured'}
+                locale={locale}
                 tone="emerald"
               />
               <ZoneCard
                 title={isPt ? 'Zona de rebaixamento' : isEs ? 'Zona de descenso' : 'Relegation zone'}
                 players={rules.relegation_count > 0 ? entries.slice(-rules.relegation_count) : []}
                 emptyLabel={isPt ? 'Nenhum rebaixamento configurado' : isEs ? 'Sin descenso configurado' : 'No relegation configured'}
+                locale={locale}
                 tone="red"
               />
             </div>
@@ -423,7 +479,11 @@ export default function LeagueRankingPage() {
                         </p>
                         <MovementBadge entry={entry} locale={locale} />
                         <PointsDeltaBadge entry={entry} locale={locale} />
+                        {entry.isTied && <TieBadge locale={locale} />}
                         {!entry.player.is_active && <InactiveBadge locale={locale} />}
+                      </div>
+                      <div className="mt-3 max-w-[220px]">
+                        <SparklineBars values={entry.history} tone={entry.player.is_active ? 'teal' : 'neutral'} />
                       </div>
                     </div>
                   </div>
@@ -576,11 +636,52 @@ function InactiveBadge({ locale }: { locale: string }) {
   );
 }
 
-function ZoneCard({ title, players, emptyLabel, tone }: {
+function TieBadge({ locale, compact = false }: { locale: string; compact?: boolean }) {
+  const isEs = locale === 'es';
+  const isPt = locale === 'pt';
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/10 px-2 py-1 text-[11px] font-semibold text-fuchsia-700">
+      {compact ? 'T' : isPt ? 'Empate tecnico' : isEs ? 'Empate tecnico' : 'Technical tie'}
+    </span>
+  );
+}
+
+function SparklineBars({ values, tone }: { values: number[]; tone: 'amber' | 'teal' | 'neutral' }) {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const maxValue = Math.max(...values, 1);
+  const toneClass = {
+    amber: 'bg-amber-500/70',
+    teal: 'bg-teal-500/70',
+    neutral: 'bg-neutral-400/70',
+  }[tone];
+
+  return (
+    <div className="flex h-8 items-end gap-1" aria-hidden="true">
+      {values.map((value, index) => {
+        const height = Math.max(20, Math.round((value / maxValue) * 100));
+
+        return (
+          <span
+            key={`${index}-${value}`}
+            className={`w-2 rounded-full ${toneClass}`}
+            style={{ height: `${height}%` }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function ZoneCard({ title, players, emptyLabel, tone, locale }: {
   title: string;
   players: RankingEntry[];
   emptyLabel: string;
   tone: 'emerald' | 'red';
+  locale: string;
 }) {
   const toneClass = {
     emerald: 'border-emerald-200 bg-emerald-500/8',
@@ -600,6 +701,7 @@ function ZoneCard({ title, players, emptyLabel, tone }: {
                 #{entry.position} {entry.player.full_name}
               </span>
               <div className="ml-3 flex items-center gap-2">
+                {entry.isTied && <TieBadge locale={locale} compact />}
                 <PointsDeltaBadge entry={entry} locale="en" compact />
                 <span className="text-sm font-black text-neutral-900">{entry.points}</span>
               </div>
