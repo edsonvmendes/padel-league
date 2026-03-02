@@ -11,7 +11,7 @@ import { t } from '@/lib/i18n';
 import { parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
 import { MATCH_PAIRINGS, calculateGroupPoints, isValidScore, generateWhatsAppMessage } from '@/lib/scoring-engine';
 import {
-  ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus,
+  ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus, Bell,
   Trophy, ChevronDown, ChevronUp, AlertTriangle, XCircle,
 } from 'lucide-react';
 
@@ -753,6 +753,44 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
       : `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(target, '_blank', 'noopener,noreferrer');
   };
+  const remindPlayer = (playerEntry: RoundCourtPlayer & { playerData: Player }) => {
+    if (typeof window === 'undefined') return;
+
+    const contact = parsePlayerContact(playerEntry.playerData?.notes);
+    const phone = toWhatsAppPhone(contact.phone);
+    if (!phone) {
+      toast.warning(isPt ? 'Adicione um telefone para essa jogadora.' : isEs ? 'Agrega un telefono para esta jugadora.' : 'Add a phone number for this player.');
+      return;
+    }
+
+    const reminderTone = playerEntry.attendance === 'absent'
+      ? {
+          intro: isPt ? 'Preciso confirmar sua ausencia nesta rodada.' : isEs ? 'Necesito confirmar tu ausencia en esta jornada.' : 'I need to confirm your absence for this round.',
+          followUp: isPt ? 'Se conseguir jogar, me avisa. Se nao, me confirma para eu ajustar a escala.' : isEs ? 'Si puedes jugar, avisame. Si no, confirmamelo para ajustar la rotacion.' : 'If you can still play, let me know. Otherwise, please confirm so I can adjust the lineup.',
+          cta: isPt ? 'confirmar ausencia' : isEs ? 'confirmar ausencia' : 'confirm absence',
+        }
+      : playerEntry.attendance === 'substitute'
+        ? {
+            intro: isPt ? 'Quero alinhar sua entrada como substituta nesta rodada.' : isEs ? 'Quiero confirmar tu entrada como suplente en esta jornada.' : 'I want to confirm your substitute availability for this round.',
+            followUp: isPt ? 'Me avisa se consegue entrar nessa faixa de horario.' : isEs ? 'Avisame si puedes entrar en esta franja horaria.' : 'Let me know if you can join in this time slot.',
+            cta: isPt ? 'chamar substituta' : isEs ? 'llamar suplente' : 'call substitute',
+          }
+        : {
+            intro: isPt ? 'Lembrete rapido da sua rodada.' : isEs ? 'Recordatorio rapido de tu partido.' : 'Quick reminder for your match.',
+            followUp: isPt ? 'Me confirma sua presenca quando puder, por favor.' : isEs ? 'Confirma tu asistencia cuando puedas, por favor.' : 'Please confirm your attendance when you can.',
+            cta: isPt ? 'confirmar presenca' : isEs ? 'confirmar asistencia' : 'confirm attendance',
+          };
+
+    const message = [
+      isPt ? `Oi, ${playerEntry.playerData?.full_name || 'jogadora'}.` : isEs ? `Hola, ${playerEntry.playerData?.full_name || 'jugadora'}.` : `Hi, ${playerEntry.playerData?.full_name || 'player'}.`,
+      reminderTone.intro,
+      isPt ? `Faixa prevista: ${g.slot?.slot_time || '--:--'}.` : isEs ? `Franja prevista: ${g.slot?.slot_time || '--:--'}.` : `Planned slot: ${g.slot?.slot_time || '--:--'}.`,
+      isPt ? `Quadra nivel ${levelNum}.` : isEs ? `Cancha nivel ${levelNum}.` : `Level court ${levelNum}.`,
+      reminderTone.followUp,
+    ].join('\n');
+
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  };
   const attendanceLabel = (a: string) => {
     if (a === 'present')    return isPt ? '✓ Presente' : isEs ? '✓ Presente' : '✓ Present';
     if (a === 'absent')     return isPt ? '✗ Ausente'  : isEs ? '✗ Ausente'  : '✗ Absent';
@@ -842,6 +880,17 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                           className={`w-full rounded-xl py-1.5 text-xs font-semibold ${ATTENDANCE_BTN[cp.attendance] || ''}`}>
                           {attendanceLabel(cp.attendance)}
                         </button>
+                        {toWhatsAppPhone(parsePlayerContact(cp.playerData?.notes).phone) && (
+                          <button onClick={() => remindPlayer(cp)}
+                            className="text-[10px] text-neutral-400 hover:text-emerald-600 flex items-center justify-center gap-0.5">
+                            <Bell size={10} />
+                            {cp.attendance === 'absent'
+                              ? (isPt ? 'confirmar falta' : isEs ? 'confirmar falta' : 'confirm absence')
+                              : cp.attendance === 'substitute'
+                                ? (isPt ? 'chamar sub' : isEs ? 'llamar suplente' : 'call sub')
+                                : (isPt ? 'confirmar presenca' : isEs ? 'confirmar asistencia' : 'confirm attendance')}
+                          </button>
+                        )}
                         <button onClick={() => onRemovePlayer(cp.id)}
                           className="text-[10px] text-neutral-400 hover:text-red-500 flex items-center justify-center gap-0.5">
                           <XCircle size={10} />

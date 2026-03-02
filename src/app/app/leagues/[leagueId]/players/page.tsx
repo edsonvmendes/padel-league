@@ -271,8 +271,15 @@ export default function PlayersPage() {
 
     const message = [
       isPt ? `Oi, ${player.full_name}.` : isEs ? `Hola, ${player.full_name}.` : `Hi, ${player.full_name}.`,
-      isPt ? `Contato rapido da liga ${league?.name || ''}.` : isEs ? `Contacto rapido de la liga ${league?.name || ''}.` : `Quick contact from ${league?.name || 'the league'}.`,
-    ].join('\n');
+      isPt ? `Passando para alinhar sua agenda na liga ${league?.name || ''}.` : isEs ? `Te escribo para alinear tu agenda en ${league?.name || ''}.` : `Reaching out to align your schedule for ${league?.name || 'the league'}.`,
+      player.is_active
+        ? (isPt ? 'Voce segue na base ativa da liga.' : isEs ? 'Sigues en la base activa de la liga.' : 'You are currently active in the league roster.')
+        : (isPt ? 'Seu cadastro esta como inativo no momento.' : isEs ? 'Tu registro esta como inactivo por ahora.' : 'Your roster status is currently inactive.'),
+      contact.notes
+        ? (isPt ? `Observacao rapida: ${contact.notes}` : isEs ? `Nota rapida: ${contact.notes}` : `Quick note: ${contact.notes}`)
+        : null,
+      isPt ? 'Me confirma quando puder, por favor.' : isEs ? 'Confirma cuando puedas, por favor.' : 'Please confirm when you can.',
+    ].filter(Boolean).join('\n');
 
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
