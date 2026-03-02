@@ -6,14 +6,21 @@ import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
 import { SkeletonList } from '@/components/Skeleton';
 import { League, Player, Round, RoundPoints, Rules } from '@/types/database';
-import { Trophy, Medal, ChevronLeft, Users, ArrowUp, ArrowDown, Minus, Filter } from 'lucide-react';
+import { Trophy, Medal, ChevronLeft, Users, ArrowUp, ArrowDown, Minus, Filter, Activity } from 'lucide-react';
 
 type RankingEntry = {
   player: Player;
   points: number;
+  previousPoints: number;
+  pointsDelta: number;
   position: number;
   previousPosition: number | null;
   movement: number | null;
+};
+
+type RankingSnapshot = {
+  entries: RankingEntry[];
+  topScore: number;
 };
 
 export default function LeagueRankingPage() {
@@ -30,6 +37,7 @@ export default function LeagueRankingPage() {
   const [roundPoints, setRoundPoints] = useState<RoundPoints[]>([]);
   const [rules, setRules] = useState<Rules | null>(null);
   const [selectedRoundId, setSelectedRoundId] = useState<'all' | string>('all');
+  const [compareRoundId, setCompareRoundId] = useState<'prev' | 'none' | string>('prev');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,78 +73,102 @@ export default function LeagueRankingPage() {
     setLoading(false);
   };
 
-  const rankingData = useMemo(() => {
+  const rankingData = useMemo((): { snapshot: RankingSnapshot; comparedRound: Round | null } => {
     const roundsOrdered = [...closedRounds].sort((a, b) => a.number - b.number);
     const targetIndex = selectedRoundId === 'all'
       ? roundsOrdered.length - 1
       : roundsOrdered.findIndex((round) => round.id === selectedRoundId);
 
-    const effectiveIndex = targetIndex;
-    if (effectiveIndex < 0) {
-      return { entries: [] as RankingEntry[], topScore: 0, comparedRound: null as Round | null };
+    if (targetIndex < 0) {
+      return { snapshot: { entries: [], topScore: 0 }, comparedRound: null };
     }
 
-    const includedRounds = roundsOrdered.slice(0, effectiveIndex + 1);
-    const previousRounds = roundsOrdered.slice(0, effectiveIndex);
-    const includedIds = new Set(includedRounds.map((round) => round.id));
-    const previousIds = new Set(previousRounds.map((round) => round.id));
+    const selectedRounds = roundsOrdered.slice(0, targetIndex + 1);
+    const selectedIds = new Set(selectedRounds.map((round) => round.id));
 
-    const currentTotals = new Map<string, number>();
-    const previousTotals = new Map<string, number>();
+    let comparisonRounds: Round[] = [];
+    if (compareRoundId === 'none') {
+      comparisonRounds = [];
+    } else if (compareRoundId === 'prev') {
+      comparisonRounds = roundsOrdered.slice(0, targetIndex);
+    } else {
+      const compareIndex = roundsOrdered.findIndex((round) => round.id === compareRoundId);
+      comparisonRounds = compareIndex >= 0 ? roundsOrdered.slice(0, compareIndex + 1) : [];
+    }
+
+    const comparisonIds = new Set(comparisonRounds.map((round) => round.id));
+
+    const selectedTotals = new Map<string, number>();
+    const comparisonTotals = new Map<string, number>();
 
     roundPoints.forEach((entry) => {
-      if (includedIds.has(entry.round_id)) {
-        currentTotals.set(entry.player_id, (currentTotals.get(entry.player_id) || 0) + entry.points);
+      if (selectedIds.has(entry.round_id)) {
+        selectedTotals.set(entry.player_id, (selectedTotals.get(entry.player_id) || 0) + entry.points);
       }
-      if (previousIds.has(entry.round_id)) {
-        previousTotals.set(entry.player_id, (previousTotals.get(entry.player_id) || 0) + entry.points);
+      if (comparisonIds.has(entry.round_id)) {
+        comparisonTotals.set(entry.player_id, (comparisonTotals.get(entry.player_id) || 0) + entry.points);
       }
     });
 
-    const activeEntries = players
-      .filter((player) => currentTotals.has(player.id))
-      .map((player) => ({
-        player,
-        points: currentTotals.get(player.id) || 0,
-      }))
-      .sort((a, b) => b.points - a.points || a.player.full_name.localeCompare(b.player.full_name));
-
     const previousRanking = players
-      .filter((player) => previousTotals.has(player.id))
+      .filter((player) => comparisonTotals.has(player.id))
       .map((player) => ({
         playerId: player.id,
-        points: previousTotals.get(player.id) || 0,
+        points: comparisonTotals.get(player.id) || 0,
+        name: player.full_name,
       }))
-      .sort((a, b) => b.points - a.points)
+      .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name))
       .reduce<Map<string, number>>((acc, entry, index) => {
         acc.set(entry.playerId, index + 1);
         return acc;
       }, new Map());
 
-    const entries: RankingEntry[] = activeEntries.map((entry, index) => {
-      const previousPosition = previousRanking.get(entry.player.id) || null;
-      const position = index + 1;
-      return {
-        player: entry.player,
-        points: entry.points,
-        position,
-        previousPosition,
-        movement: previousPosition ? previousPosition - position : null,
-      };
-    });
+    const entries = players
+      .filter((player) => selectedTotals.has(player.id))
+      .map((player) => {
+        const points = selectedTotals.get(player.id) || 0;
+        const previousPoints = comparisonTotals.get(player.id) || 0;
+        return {
+          player,
+          points,
+          previousPoints,
+        };
+      })
+      .sort((a, b) => b.points - a.points || a.player.full_name.localeCompare(b.player.full_name))
+      .map((entry, index) => {
+        const position = index + 1;
+        const previousPosition = previousRanking.get(entry.player.id) || null;
+        return {
+          player: entry.player,
+          points: entry.points,
+          previousPoints: entry.previousPoints,
+          pointsDelta: entry.points - entry.previousPoints,
+          position,
+          previousPosition,
+          movement: previousPosition ? previousPosition - position : null,
+        };
+      });
+
+    let comparedRound: Round | null = null;
+    if (comparisonRounds.length > 0) {
+      comparedRound = comparisonRounds[comparisonRounds.length - 1];
+    }
 
     return {
-      entries,
-      topScore: entries[0]?.points || 0,
-      comparedRound: effectiveIndex > 0 ? roundsOrdered[effectiveIndex - 1] : null,
+      snapshot: {
+        entries,
+        topScore: entries[0]?.points || 0,
+      },
+      comparedRound,
     };
-  }, [closedRounds, players, roundPoints, selectedRoundId]);
+  }, [closedRounds, players, roundPoints, selectedRoundId, compareRoundId]);
 
-  const entries = rankingData.entries;
-  const topScore = rankingData.topScore;
+  const entries = rankingData.snapshot.entries;
+  const topScore = rankingData.snapshot.topScore;
   const podium = entries.slice(0, 3);
   const remaining = entries.slice(3);
   const activePlayers = players.filter((player) => player.is_active).length;
+  const inactiveInRanking = entries.filter((entry) => !entry.player.is_active).length;
   const comparedRound = rankingData.comparedRound;
   const selectedRound = selectedRoundId === 'all'
     ? closedRounds[closedRounds.length - 1] || null
@@ -180,62 +212,100 @@ export default function LeagueRankingPage() {
               Ranking
             </h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600 sm:text-[15px]">
-              {league?.name || ''} · {isPt ? 'Filtro por rodada, movimento e zonas competitivas.' : isEs ? 'Filtro por jornada, movimiento y zonas competitivas.' : 'Round filter, movement, and competitive zones.'}
+              {league?.name || ''} · {isPt ? 'Comparacao entre cortes, delta de pontos e zonas competitivas.' : isEs ? 'Comparacion entre cortes, delta de puntos y zonas competitivas.' : 'Scope comparison, point deltas, and competitive zones.'}
             </p>
           </div>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <MetricCard
-          label={isPt ? 'Jogadoras ranqueadas' : isEs ? 'Jugadoras rankeadas' : 'Ranked players'}
+          label={isPt ? 'Ranqueadas' : isEs ? 'Rankeadas' : 'Ranked'}
           value={entries.length}
-          detail={isPt ? 'com pontos no recorte' : isEs ? 'con puntos en el recorte' : 'with points in this scope'}
+          detail={isPt ? 'no recorte atual' : isEs ? 'en el recorte actual' : 'in current scope'}
           tone="amber"
         />
         <MetricCard
           label={isPt ? 'Ativas' : isEs ? 'Activas' : 'Active'}
           value={activePlayers}
-          detail={isPt ? 'na base atual' : isEs ? 'en la base actual' : 'in the current roster'}
+          detail={isPt ? 'na base atual' : isEs ? 'en la base actual' : 'in current roster'}
           tone="teal"
+        />
+        <MetricCard
+          label={isPt ? 'Inativas no ranking' : isEs ? 'Inactivas en ranking' : 'Inactive in ranking'}
+          value={inactiveInRanking}
+          detail={isPt ? 'pontuam, mas ficam sinalizadas' : isEs ? 'puntuan, pero quedan marcadas' : 'scored, but visually marked'}
+          tone="neutral"
         />
         <MetricCard
           label={isPt ? 'Lider' : isEs ? 'Lider' : 'Leader'}
           value={topScore}
           detail={isPt ? 'maior pontuacao' : isEs ? 'mayor puntuacion' : 'highest points'}
-          tone="neutral"
+          tone="amber"
         />
       </div>
 
       <div className="card p-4 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="grid gap-3 lg:grid-cols-2">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
-              {isPt ? 'Recorte' : isEs ? 'Recorte' : 'Scope'}
+              {isPt ? 'Ranking ate' : isEs ? 'Ranking hasta' : 'Ranking through'}
             </p>
-            <p className="mt-1 text-sm font-semibold text-neutral-700">
-              {selectedRound
-                ? (isPt ? `Ate a rodada ${selectedRound.number}` : isEs ? `Hasta la jornada ${selectedRound.number}` : `Up to round ${selectedRound.number}`)
-                : (isPt ? 'Sem rodadas fechadas' : isEs ? 'Sin jornadas cerradas' : 'No closed rounds')}
+            <div className="mt-2 flex items-center gap-2">
+              <Filter size={16} className="text-neutral-400" />
+              <select
+                value={selectedRoundId}
+                onChange={(event) => {
+                  const value = event.target.value as 'all' | string;
+                  setSelectedRoundId(value);
+                  setCompareRoundId('prev');
+                }}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700"
+              >
+                <option value="all">{isPt ? 'Ranking completo' : isEs ? 'Ranking completo' : 'Full ranking'}</option>
+                {closedRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {isPt ? `Ate rodada ${round.number}` : isEs ? `Hasta jornada ${round.number}` : `Up to round ${round.number}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+              {isPt ? 'Comparar com' : isEs ? 'Comparar con' : 'Compare against'}
             </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Filter size={16} className="text-neutral-400" />
+              <select
+                value={compareRoundId}
+                onChange={(event) => setCompareRoundId(event.target.value as 'prev' | 'none' | string)}
+                className="w-full rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700"
+              >
+                <option value="prev">{isPt ? 'Recorte anterior' : isEs ? 'Corte anterior' : 'Previous scope'}</option>
+                <option value="none">{isPt ? 'Sem comparacao' : isEs ? 'Sin comparacion' : 'No comparison'}</option>
+                {closedRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {isPt ? `Rodada ${round.number}` : isEs ? `Jornada ${round.number}` : `Round ${round.number}`}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Filter size={16} className="text-neutral-400" />
-            <select
-              value={selectedRoundId}
-              onChange={(event) => setSelectedRoundId(event.target.value as 'all' | string)}
-              className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700"
-            >
-              <option value="all">
-                {isPt ? 'Ranking completo' : isEs ? 'Ranking completo' : 'Full ranking'}
-              </option>
-              {closedRounds.map((round) => (
-                <option key={round.id} value={round.id}>
-                  {isPt ? `Ate rodada ${round.number}` : isEs ? `Hasta jornada ${round.number}` : `Up to round ${round.number}`}
-                </option>
-              ))}
-            </select>
-          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-neutral-500">
+          <span className="rounded-full bg-neutral-900/5 px-2.5 py-1">
+            {selectedRound
+              ? (isPt ? `Corte atual: rodada ${selectedRound.number}` : isEs ? `Corte actual: jornada ${selectedRound.number}` : `Current scope: round ${selectedRound.number}`)
+              : (isPt ? 'Sem rodadas fechadas' : isEs ? 'Sin jornadas cerradas' : 'No closed rounds')}
+          </span>
+          <span className="rounded-full bg-teal-500/10 px-2.5 py-1 text-teal-700">
+            {comparedRound
+              ? (isPt ? `Comparando com rodada ${comparedRound.number}` : isEs ? `Comparando con jornada ${comparedRound.number}` : `Comparing with round ${comparedRound.number}`)
+              : (isPt ? 'Sem base de comparacao' : isEs ? 'Sin base de comparacion' : 'No comparison baseline')}
+          </span>
         </div>
       </div>
 
@@ -277,7 +347,7 @@ export default function LeagueRankingPage() {
                         : entry.position === 2
                           ? 'border-neutral-200 bg-[linear-gradient(145deg,rgba(250,250,250,0.96),rgba(245,245,245,0.94))]'
                           : 'border-orange-200 bg-[linear-gradient(145deg,rgba(255,247,237,0.96),rgba(255,237,213,0.92))]'
-                    }`}
+                    } ${!entry.player.is_active ? 'opacity-75 ring-1 ring-neutral-300/70' : ''}`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-[0_18px_36px_-24px_rgba(15,23,42,0.25)] ${
@@ -287,15 +357,15 @@ export default function LeagueRankingPage() {
                       </div>
                       <MovementBadge entry={entry} locale={locale} compact />
                     </div>
-                    <p className="mt-4 truncate text-base font-black text-neutral-950">
-                      {entry.player.full_name}
-                    </p>
+                    <p className="mt-4 truncate text-base font-black text-neutral-950">{entry.player.full_name}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {!entry.player.is_active && <InactiveBadge locale={locale} />}
+                      <PointsDeltaBadge entry={entry} locale={locale} compact />
+                    </div>
                     <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
                       {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
                     </p>
-                    <p className="mt-1 text-3xl font-black tracking-[-0.04em] text-neutral-950">
-                      {entry.points}
-                    </p>
+                    <p className="mt-1 text-3xl font-black tracking-[-0.04em] text-neutral-950">{entry.points}</p>
                   </div>
                 ))}
               </div>
@@ -323,7 +393,11 @@ export default function LeagueRankingPage() {
             {(remaining.length > 0 ? remaining : podium).map((entry) => (
               <div
                 key={entry.player.id}
-                className="rounded-[1.7rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-5 shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)]"
+                className={`rounded-[1.7rem] border p-5 shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] ${
+                  entry.player.is_active
+                    ? 'border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))]'
+                    : 'border-neutral-200 bg-[linear-gradient(145deg,rgba(250,250,250,0.96),rgba(244,244,245,0.9))]'
+                }`}
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-center gap-4">
@@ -340,7 +414,7 @@ export default function LeagueRankingPage() {
                     </div>
 
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-neutral-900 sm:text-base">
+                      <p className={`truncate text-sm font-bold sm:text-base ${entry.player.is_active ? 'text-neutral-900' : 'text-neutral-500'}`}>
                         {entry.player.full_name}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -348,6 +422,8 @@ export default function LeagueRankingPage() {
                           {isPt ? `Posicao #${entry.position}` : isEs ? `Posicion #${entry.position}` : `Position #${entry.position}`}
                         </p>
                         <MovementBadge entry={entry} locale={locale} />
+                        <PointsDeltaBadge entry={entry} locale={locale} />
+                        {!entry.player.is_active && <InactiveBadge locale={locale} />}
                       </div>
                     </div>
                   </div>
@@ -357,15 +433,11 @@ export default function LeagueRankingPage() {
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
                         {isPt ? 'Pontos' : isEs ? 'Puntos' : 'Points'}
                       </p>
-                      <p className="mt-1 text-2xl font-black tracking-[-0.03em] text-neutral-950">
-                        {entry.points}
-                      </p>
+                      <p className="mt-1 text-2xl font-black tracking-[-0.03em] text-neutral-950">{entry.points}</p>
                     </div>
                     <div className="hidden rounded-2xl bg-teal-500/10 px-4 py-3 text-teal-700 sm:block">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">Gap</p>
-                      <p className="mt-1 text-sm font-black">
-                        {entry.position === 1 ? '-' : topScore - entry.points}
-                      </p>
+                      <p className="mt-1 text-sm font-black">{entry.position === 1 ? '-' : topScore - entry.points}</p>
                     </div>
                   </div>
                 </div>
@@ -383,8 +455,8 @@ export default function LeagueRankingPage() {
             </span>
             <span className="rounded-full bg-neutral-900/5 px-2.5 py-1">
               {comparedRound
-                ? (isPt ? `Comparado com rodada ${comparedRound.number}` : isEs ? `Comparado con jornada ${comparedRound.number}` : `Compared with round ${comparedRound.number}`)
-                : (isPt ? 'Sem rodada anterior para comparar' : isEs ? 'Sin jornada previa para comparar' : 'No previous round to compare')}
+                ? (isPt ? `Base de comparacao: rodada ${comparedRound.number}` : isEs ? `Base de comparacion: jornada ${comparedRound.number}` : `Comparison baseline: round ${comparedRound.number}`)
+                : (isPt ? 'Sem base de comparacao' : isEs ? 'Sin base de comparacion' : 'No comparison baseline')}
             </span>
           </div>
           <div className="sm:ml-auto flex items-center gap-2 text-sm font-semibold text-neutral-500">
@@ -461,6 +533,49 @@ function MovementBadge({ entry, locale, compact }: {
   );
 }
 
+function PointsDeltaBadge({ entry, locale, compact }: {
+  entry: RankingEntry;
+  locale: string;
+  compact?: boolean;
+}) {
+  const isEs = locale === 'es';
+  const isPt = locale === 'pt';
+
+  if (entry.pointsDelta > 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-teal-500/10 px-2 py-1 text-[11px] font-semibold text-teal-700">
+        +{entry.pointsDelta} {compact ? '' : (isPt ? 'pts' : isEs ? 'pts' : 'pts')}
+      </span>
+    );
+  }
+
+  if (entry.pointsDelta < 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-1 text-[11px] font-semibold text-red-700">
+        {entry.pointsDelta} {compact ? '' : (isPt ? 'pts' : isEs ? 'pts' : 'pts')}
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-neutral-900/5 px-2 py-1 text-[11px] font-semibold text-neutral-500">
+      0 {compact ? '' : (isPt ? 'pts' : isEs ? 'pts' : 'pts')}
+    </span>
+  );
+}
+
+function InactiveBadge({ locale }: { locale: string }) {
+  const isEs = locale === 'es';
+  const isPt = locale === 'pt';
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-neutral-900/6 px-2 py-1 text-[11px] font-semibold text-neutral-500">
+      <Activity size={11} />
+      {isPt ? 'Inativa' : isEs ? 'Inactiva' : 'Inactive'}
+    </span>
+  );
+}
+
 function ZoneCard({ title, players, emptyLabel, tone }: {
   title: string;
   players: RankingEntry[];
@@ -484,7 +599,10 @@ function ZoneCard({ title, players, emptyLabel, tone }: {
               <span className="truncate text-sm font-semibold text-neutral-800">
                 #{entry.position} {entry.player.full_name}
               </span>
-              <span className="ml-3 text-sm font-black text-neutral-900">{entry.points}</span>
+              <div className="ml-3 flex items-center gap-2">
+                <PointsDeltaBadge entry={entry} locale="en" compact />
+                <span className="text-sm font-black text-neutral-900">{entry.points}</span>
+              </div>
             </div>
           ))
         )}
