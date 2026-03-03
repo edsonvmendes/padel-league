@@ -52,6 +52,7 @@ export default function PlayersPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [linkingPlayerId, setLinkingPlayerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && leagueId) load();
@@ -87,6 +88,8 @@ export default function PlayersPage() {
   };
 
   const linkExistingPlayer = async (playerId: string) => {
+    if (linkingPlayerId) return;
+
     const alreadyLinked = players.some((player) => player.id === playerId);
     if (alreadyLinked) {
       toast.warning(
@@ -95,15 +98,20 @@ export default function PlayersPage() {
       return;
     }
 
-    await runOrThrow(
-      () => db.from('league_players').insert({ league_id: leagueId, player_id: playerId }),
-      isEs ? 'Error al vincular jugadora' : isPt ? 'Erro ao vincular jogadora' : 'Failed to link player'
-    );
-    setBaseSearch('');
-    toast.success(
-      isPt ? 'Jogadora vinculada a liga.' : isEs ? 'Jugadora vinculada a la liga.' : 'Player linked to the league.'
-    );
-    load();
+    setLinkingPlayerId(playerId);
+    try {
+      await runOrThrow(
+        () => db.from('league_players').insert({ league_id: leagueId, player_id: playerId }),
+        isEs ? 'Error al vincular jugadora' : isPt ? 'Erro ao vincular jogadora' : 'Failed to link player'
+      );
+      setBaseSearch('');
+      toast.success(
+        isPt ? 'Jogadora vinculada a liga.' : isEs ? 'Jugadora vinculada a la liga.' : 'Player linked to the league.'
+      );
+      load();
+    } finally {
+      setLinkingPlayerId(null);
+    }
   };
 
   const openNew = () => {
@@ -141,7 +149,7 @@ export default function PlayersPage() {
           if (!value) return null;
           const date = new Date(value);
           if (isNaN(date.getTime())) return isEs ? 'Fecha invalida' : isPt ? 'Data invalida' : 'Invalid date';
-          if (date > new Date()) return isEs ? 'La fecha no puede ser futura' : isPt ? 'A data não pode ser futura' : 'Date cannot be in the future';
+          if (date > new Date()) return isEs ? 'La fecha no puede ser futura' : isPt ? 'A data nao pode ser futura' : 'Date cannot be in the future';
           return null;
         },
       },
@@ -221,38 +229,57 @@ export default function PlayersPage() {
   };
 
   const handleDelete = async (player: Player) => {
+    const playerLeagueCount = playerLeagueCounts[player.id] || 1;
+    const willDeleteFromBase = playerLeagueCount <= 1;
     const ok = await confirm({
-      title: isEs ? 'Eliminar jugadora' : isPt ? 'Excluir jogadora' : 'Delete player',
-      message: isEs
-        ? `Eliminar "${player.full_name}"? Esta accion no se puede deshacer.`
+      title: isEs
+        ? (willDeleteFromBase ? 'Eliminar de la base' : 'Desvincular de la liga')
         : isPt
-          ? `Excluir "${player.full_name}"? Essa ação não pode ser desfeita.`
-          : `Delete "${player.full_name}"? This cannot be undone.`,
-      confirmLabel: isEs ? 'Eliminar' : isPt ? 'Excluir' : 'Delete',
+          ? (willDeleteFromBase ? 'Remover da base' : 'Desvincular da liga')
+          : (willDeleteFromBase ? 'Remove from base' : 'Unlink from league'),
+      message: isEs
+        ? (willDeleteFromBase
+            ? `Eliminar "${player.full_name}" de la base general? Tambien se quitara de esta liga.`
+            : `Desvincular "${player.full_name}" solo de esta liga? La jugadora seguira en tu base.`)
+        : isPt
+          ? (willDeleteFromBase
+              ? `Remover "${player.full_name}" da base geral? Ela tambem sera retirada desta liga.`
+              : `Desvincular "${player.full_name}" apenas desta liga? A jogadora continuara na sua base.`)
+          : (willDeleteFromBase
+              ? `Remove "${player.full_name}" from the shared base? This also removes her from this league.`
+              : `Unlink "${player.full_name}" from this league only? The player stays in your shared base.`),
+      confirmLabel: isEs
+        ? (willDeleteFromBase ? 'Eliminar base' : 'Desvincular')
+        : isPt
+          ? (willDeleteFromBase ? 'Remover base' : 'Desvincular')
+          : willDeleteFromBase
+            ? 'Remove base'
+            : 'Unlink',
       cancelLabel: isEs ? 'Cancelar' : isPt ? 'Cancelar' : 'Cancel',
       variant: 'danger',
     });
-
     if (!ok) return;
-
     await runOrThrow(
       () => db.from('league_players').delete().eq('league_id', leagueId).eq('player_id', player.id),
       isEs ? 'Error al desvincular jugadora' : isPt ? 'Erro ao desvincular jogadora' : 'Failed to unlink player'
     );
-
     const remainingLinksResult = await run(() =>
       db.from('league_players').select('id', { count: 'exact', head: true }).eq('player_id', player.id)
     );
     const remainingLinks = (remainingLinksResult as any).count || 0;
-
     if (!remainingLinks) {
       await runOrThrow(
         () => db.from('players').delete().eq('id', player.id),
         isEs ? 'Error al eliminar' : isPt ? 'Erro ao excluir' : 'Failed to delete'
       );
     }
-
-    toast.success(isEs ? 'Jugadora eliminada.' : isPt ? 'Jogadora excluída.' : 'Player deleted.');
+    toast.success(
+      isEs
+        ? willDeleteFromBase ? 'Jugadora eliminada de la base.' : 'Jugadora desvinculada de la liga.'
+        : isPt
+          ? willDeleteFromBase ? 'Jogadora removida da base.' : 'Jogadora desvinculada da liga.'
+          : willDeleteFromBase ? 'Player removed from the shared base.' : 'Player unlinked from the league.'
+    );
     load();
   };
 
@@ -451,14 +478,17 @@ export default function PlayersPage() {
                         <p className="truncate text-sm font-semibold text-neutral-900">{player.full_name}</p>
                         <p className="mt-1 text-xs text-neutral-500">
                           {player.is_active ? (isPt ? 'Ativa na base' : isEs ? 'Activa en la base' : 'Active in base') : (isPt ? 'Inativa na base' : isEs ? 'Inactiva en la base' : 'Inactive in base')}
-                          {(playerLeagueCounts[player.id] || 0) > 0 ? ` • ${playerLeagueCounts[player.id]} ${isPt ? 'liga(s)' : isEs ? 'liga(s)' : 'league(s)'}` : ''}
+                          {(playerLeagueCounts[player.id] || 0) > 0 ? ` - ${playerLeagueCounts[player.id]} ${isPt ? 'liga(s)' : isEs ? 'liga(s)' : 'league(s)'}` : ''}
                         </p>
                       </div>
                       <button
                         onClick={() => linkExistingPlayer(player.id)}
-                        className="rounded-2xl bg-teal-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700"
+                        disabled={linkingPlayerId !== null}
+                        className="rounded-2xl bg-teal-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
-                        {isPt ? 'Vincular' : isEs ? 'Vincular' : 'Link'}
+                        {linkingPlayerId === player.id
+                          ? isPt ? 'Vinculando...' : isEs ? 'Vinculando...' : 'Linking...'
+                          : isPt ? 'Vincular' : isEs ? 'Vincular' : 'Link'}
                       </button>
                     </div>
                   ))
@@ -473,7 +503,7 @@ export default function PlayersPage() {
         <div className="card p-5 sm:p-6">
           <SkeletonList count={5} lines={1} />
         </div>
-      ) : filtered.length === 0 ? (
+      ) : players.length === 0 ? (
         <div className="card p-10 sm:p-12 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-teal-500 to-cyan-500 text-white shadow-[0_18px_38px_-22px_rgba(13,148,136,0.75)]">
             <Users size={28} />
@@ -490,6 +520,22 @@ export default function PlayersPage() {
             <Plus size={16} />
             {t('addPlayer', locale)}
           </button>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card p-10 sm:p-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-[0_18px_38px_-22px_rgba(15,23,42,0.55)]">
+            <Search size={26} />
+          </div>
+          <p className="text-lg font-bold text-neutral-900">
+            {isPt ? 'Nenhuma jogadora encontrada' : isEs ? 'No se encontraron jugadoras' : 'No players found'}
+          </p>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
+            {isPt
+              ? 'Ajuste a busca ou remova o filtro de ativas para ver mais resultados.'
+              : isEs
+                ? 'Ajusta la busqueda o quita el filtro de activas para ver mas resultados.'
+                : 'Adjust the search or remove the active-only filter to see more results.'}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -581,7 +627,7 @@ export default function PlayersPage() {
             <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
-                  {editing ? (isPt ? 'Edição' : isEs ? 'Edición' : 'Editing') : (isPt ? 'Nova atleta' : isEs ? 'Nueva jugadora' : 'New player')}
+                  {editing ? (isPt ? 'Edicao' : isEs ? 'Edicion' : 'Editing') : (isPt ? 'Nova atleta' : isEs ? 'Nueva jugadora' : 'New player')}
                 </p>
                 <h2 className="mt-1 text-lg font-bold text-neutral-900">
                   {editing ? t('editPlayer', locale) : t('addPlayer', locale)}
@@ -651,7 +697,7 @@ export default function PlayersPage() {
                 {!errors.full_name && (
                   <p className="mt-1 text-xs leading-5 text-neutral-400">
                     {isPt
-                      ? 'Use o nome do jeito que você organiza sua lista. O cadastro continua simples e livre.'
+                      ? 'Use o nome do jeito que voce organiza sua lista. O cadastro continua simples e livre.'
                       : isEs
                         ? 'Usa el nombre como organizas tu lista. El registro sigue simple y libre.'
                         : 'Use the name however you organize your roster. The entry stays simple and flexible.'}
@@ -696,7 +742,7 @@ export default function PlayersPage() {
 
               <div>
                 <label className="label-field">
-                  {isPt ? 'Telefone' : isEs ? 'Teléfono' : 'Phone'}
+                  {isPt ? 'Telefone' : isEs ? 'Telefono' : 'Phone'}
                   <span className="ml-1 font-normal text-neutral-400">({isEs ? 'opcional' : isPt ? 'opcional' : 'optional'})</span>
                 </label>
                 <input
@@ -712,7 +758,7 @@ export default function PlayersPage() {
                 </p>
                 {!formPhoneReady && (
                   <p className="mt-1 text-xs font-medium text-amber-700">
-                    {isPt ? 'Adicione pelo menos 8 dígitos para o número ficar pronto para WhatsApp.' : isEs ? 'Agrega al menos 8 dígitos para que el número quede listo para WhatsApp.' : 'Add at least 8 digits so the number is ready for WhatsApp.'}
+                    {isPt ? 'Adicione pelo menos 8 digitos para o numero ficar pronto para WhatsApp.' : isEs ? 'Agrega al menos 8 digitos para que el numero quede listo para WhatsApp.' : 'Add at least 8 digits so the number is ready for WhatsApp.'}
                   </p>
                 )}
               </div>
@@ -726,10 +772,10 @@ export default function PlayersPage() {
                   className="input-field"
                   value={form.notes}
                   onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-                  placeholder={isEs ? 'Teléfono, nivel, observaciones...' : isPt ? 'Telefone, nível, observações...' : 'Phone, level, notes...'}
+                  placeholder={isEs ? 'Telefono, nivel, observaciones...' : isPt ? 'Telefone, nivel, observacoes...' : 'Phone, level, notes...'}
                 />
                 <p className="mt-1 text-xs leading-5 text-neutral-400">
-                  {isPt ? 'Use este campo do seu jeito: telefone, nível, observação interna ou qualquer lembrete útil.' : isEs ? 'Usa este campo a tu manera: teléfono, nivel, observación interna o cualquier recordatorio útil.' : 'Use this field your own way: phone, level, internal notes, or any helpful reminder.'}
+                  {isPt ? 'Use este campo do seu jeito: telefone, nivel, observacao interna ou qualquer lembrete util.' : isEs ? 'Usa este campo a tu manera: telefono, nivel, observacion interna o cualquier recordatorio util.' : 'Use this field your own way: phone, level, internal notes, or any helpful reminder.'}
                 </p>
               </div>
 
@@ -782,6 +828,3 @@ function MetricCard({ label, value, detail, tone }: {
     </div>
   );
 }
-
-
-
