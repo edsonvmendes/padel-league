@@ -47,7 +47,7 @@ export interface LeagueTimeSlot {
 
 export interface Player {
   id: string;
-  league_id: string;
+  league_id: string | null;
   owner_user_id: string;
   full_name: string;
   birthdate: string | null;   // ISO date

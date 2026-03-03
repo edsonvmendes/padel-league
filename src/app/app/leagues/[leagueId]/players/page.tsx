@@ -9,9 +9,8 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList, FieldError } from '@/components/Skeleton';
 import { League, Player, PaymentMethod } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { downloadCsv, safeFileName } from '@/lib/clientExport';
 import { buildPlayerNotes, normalizePhoneInput, parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
-import { Plus, Search, X, Edit2, Trash2, Users, Download, Send, MessageCircle, Smartphone, Copy } from 'lucide-react';
+import { Plus, Search, X, Edit2, Trash2, Users, Copy, Smartphone } from 'lucide-react';
 
 type FormState = {
   full_name: string;
@@ -41,86 +40,70 @@ export default function PlayersPage() {
   const isPt = locale === 'pt';
 
   const [players, setPlayers] = useState<Player[]>([]);
+  const [basePlayers, setBasePlayers] = useState<Player[]>([]);
+  const [playerLeagueCounts, setPlayerLeagueCounts] = useState<Record<string, number>>({});
   const [league, setLeague] = useState<League | null>(null);
-  const [availableLeagues, setAvailableLeagues] = useState<League[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [baseSearch, setBaseSearch] = useState('');
   const [activeOnly, setActiveOnly] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Player | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [importLeagueId, setImportLeagueId] = useState('');
-  const [importing, setImporting] = useState(false);
-  const [importCandidates, setImportCandidates] = useState<Player[]>([]);
-  const [selectedImportIds, setSelectedImportIds] = useState<string[]>([]);
-  const [loadingImportCandidates, setLoadingImportCandidates] = useState(false);
 
   useEffect(() => {
     if (user && leagueId) load();
   }, [user, leagueId]);
 
-  useEffect(() => {
-    if (!user || !importLeagueId) {
-      setImportCandidates([]);
-      setSelectedImportIds([]);
-      setLoadingImportCandidates(false);
-      return;
-    }
-
-    let active = true;
-
-    const loadImportCandidates = async () => {
-      setLoadingImportCandidates(true);
-
-      const sourcePlayers = await runOrThrow(
-        () => db.from('league_roster').select('*').eq('league_id', importLeagueId).eq('is_active', true).order('full_name'),
-        isPt ? 'Erro ao carregar jogadoras da liga de origem' : isEs ? 'Error al cargar jugadoras de la liga origen' : 'Failed to load source players'
-      );
-
-      if (!active) return;
-
-      const candidates = (sourcePlayers as Player[]) || [];
-      const normalizedExisting = new Set(
-        players.map(player => player.full_name.trim().toLocaleLowerCase())
-      );
-
-      setImportCandidates(candidates);
-      setSelectedImportIds(
-        candidates
-          .filter(player => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
-          .map(player => player.id)
-      );
-      setLoadingImportCandidates(false);
-    };
-
-    loadImportCandidates().catch(() => {
-      if (!active) return;
-      setImportCandidates([]);
-      setSelectedImportIds([]);
-      setLoadingImportCandidates(false);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [user, importLeagueId, players, db, runOrThrow, isPt, isEs]);
-
   const load = async () => {
-    const [{ data: playerData }, { data: leagueData }, { data: leaguesData }] = await Promise.all([
+    const [{ data: playerData }, { data: basePlayerData }, { data: leagueLinkData }, { data: leagueData }] = await Promise.all([
       run(
         () => db.from('league_roster').select('*').eq('league_id', leagueId).order('full_name'),
         isEs ? 'Error al cargar jugadoras' : isPt ? 'Erro ao carregar jogadoras' : 'Failed to load players'
       ),
+      run(
+        () => db.from('players').select('*').eq('owner_user_id', user!.id).order('full_name'),
+        isEs ? 'Error al cargar base general' : isPt ? 'Erro ao carregar base geral' : 'Failed to load player base'
+      ),
+      run(
+        () => db.from('league_players').select('player_id, league_id'),
+        isEs ? 'Error al cargar vinculos' : isPt ? 'Erro ao carregar vinculos' : 'Failed to load player links'
+      ),
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
-      run(() => db.from('leagues').select('*').eq('owner_user_id', user!.id).neq('id', leagueId).order('name')),
     ]);
 
     setPlayers(playerData || []);
+    setBasePlayers(basePlayerData || []);
+    setPlayerLeagueCounts(
+      ((leagueLinkData as { player_id: string }[]) || []).reduce<Record<string, number>>((acc, item) => {
+        acc[item.player_id] = (acc[item.player_id] || 0) + 1;
+        return acc;
+      }, {})
+    );
     setLeague(leagueData || null);
-    setAvailableLeagues((leaguesData as League[]) || []);
     setLoading(false);
+  };
+
+  const linkExistingPlayer = async (playerId: string) => {
+    const alreadyLinked = players.some((player) => player.id === playerId);
+    if (alreadyLinked) {
+      toast.warning(
+        isPt ? 'Essa jogadora ja esta vinculada a esta liga.' : isEs ? 'Esta jugadora ya esta vinculada a esta liga.' : 'This player is already linked to this league.'
+      );
+      return;
+    }
+
+    await runOrThrow(
+      () => db.from('league_players').insert({ league_id: leagueId, player_id: playerId }),
+      isEs ? 'Error al vincular jugadora' : isPt ? 'Erro ao vincular jogadora' : 'Failed to link player'
+    );
+    setBaseSearch('');
+    toast.success(
+      isPt ? 'Jogadora vinculada a liga.' : isEs ? 'Jugadora vinculada a la liga.' : 'Player linked to the league.'
+    );
+    load();
   };
 
   const openNew = () => {
@@ -187,16 +170,47 @@ export default function PlayersPage() {
         );
         toast.success(isEs ? 'Jugadora actualizada.' : isPt ? 'Jogadora atualizada.' : 'Player updated.');
       } else {
-        const created = await runOrThrow(
-          () => db.from('players').insert({ ...payload, league_id: null, owner_user_id: user!.id }).select('id').single(),
-          isEs ? 'Error al agregar jugadora' : isPt ? 'Erro ao adicionar jogadora' : 'Failed to add player'
+        const normalizedName = payload.full_name.trim().toLocaleLowerCase();
+        const existingBasePlayer = basePlayers.find(
+          (player) => player.full_name.trim().toLocaleLowerCase() === normalizedName
         );
-        if (!created) return;
-        await runOrThrow(
-          () => db.from('league_players').insert({ league_id: leagueId, player_id: (created as { id: string }).id }),
-          isEs ? 'Error al vincular jugadora a la liga' : isPt ? 'Erro ao vincular jogadora a liga' : 'Failed to link player to league'
-        );
-        toast.success(isEs ? 'Jugadora agregada.' : isPt ? 'Jogadora adicionada.' : 'Player added.');
+
+        if (existingBasePlayer) {
+          const alreadyLinked = players.some((player) => player.id === existingBasePlayer.id);
+          if (alreadyLinked) {
+            toast.warning(
+              isPt
+                ? 'Ja existe uma jogadora com esse nome nesta liga. Edite o cadastro atual para ajustar os dados.'
+                : isEs
+                  ? 'Ya existe una jugadora con ese nombre en esta liga. Edita el registro actual para ajustar los datos.'
+                  : 'A player with this name is already linked to this league. Edit the current record to update it.'
+            );
+            return;
+          }
+
+          await runOrThrow(
+            () => db.from('players').update(payload).eq('id', existingBasePlayer.id),
+            isEs ? 'Error al actualizar base existente' : isPt ? 'Erro ao atualizar base existente' : 'Failed to update existing player base'
+          );
+          await runOrThrow(
+            () => db.from('league_players').insert({ league_id: leagueId, player_id: existingBasePlayer.id }),
+            isEs ? 'Error al vincular jugadora a la liga' : isPt ? 'Erro ao vincular jogadora a liga' : 'Failed to link player to league'
+          );
+          toast.success(
+            isEs ? 'Jugadora existente vinculada.' : isPt ? 'Jogadora existente vinculada.' : 'Existing player linked.'
+          );
+        } else {
+          const created = await runOrThrow(
+            () => db.from('players').insert({ ...payload, league_id: null, owner_user_id: user!.id }).select('id').single(),
+            isEs ? 'Error al agregar jugadora' : isPt ? 'Erro ao adicionar jogadora' : 'Failed to add player'
+          );
+          if (!created) return;
+          await runOrThrow(
+            () => db.from('league_players').insert({ league_id: leagueId, player_id: (created as { id: string }).id }),
+            isEs ? 'Error al vincular jugadora a la liga' : isPt ? 'Erro ao vincular jogadora a liga' : 'Failed to link player to league'
+          );
+          toast.success(isEs ? 'Jugadora agregada.' : isPt ? 'Jogadora adicionada.' : 'Player added.');
+        }
       }
 
       setShowForm(false);
@@ -250,79 +264,6 @@ export default function PlayersPage() {
     load();
   };
 
-  const importPlayersFromLeague = async () => {
-    if (!importLeagueId) {
-      toast.warning(isPt ? 'Selecione uma liga de origem.' : isEs ? 'Selecciona una liga de origen.' : 'Select a source league.');
-      return;
-    }
-
-    if (selectedImportIds.length === 0) {
-      toast.warning(
-        isPt
-          ? 'Selecione ao menos uma jogadora elegivel para importar.'
-          : isEs
-            ? 'Selecciona al menos una jugadora elegible para importar.'
-            : 'Select at least one eligible player to import.'
-      );
-      return;
-    }
-
-    setImporting(true);
-    try {
-      const normalizedExisting = new Set(
-        players.map(player => player.full_name.trim().toLocaleLowerCase())
-      );
-
-      const toInsert = importCandidates
-        .filter((player) => selectedImportIds.includes(player.id))
-        .filter((player) => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
-        .map((player: Player) => player.id);
-
-      if (toInsert.length === 0) {
-        toast.warning(
-          isPt
-            ? 'Nenhuma jogadora nova para importar. Os nomes ja existem nesta liga.'
-            : isEs
-              ? 'No hay jugadoras nuevas para importar. Los nombres ya existen en esta liga.'
-              : 'No new players to import. Those names already exist in this league.'
-        );
-        return;
-      }
-
-      await runOrThrow(
-        () => db.from('league_players').insert(
-          toInsert.map((playerId) => ({
-            league_id: leagueId,
-            player_id: playerId,
-          }))
-        ),
-        isPt ? 'Erro ao importar jogadoras' : isEs ? 'Error al importar jugadoras' : 'Failed to import players'
-      );
-
-      toast.success(
-        isPt
-          ? `${toInsert.length} jogadora(s) importada(s).`
-          : isEs
-            ? `${toInsert.length} jugadora(s) importada(s).`
-            : `${toInsert.length} player(s) imported.`
-      );
-      setImportLeagueId('');
-      setImportCandidates([]);
-      setSelectedImportIds([]);
-      load();
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const toggleImportCandidate = (playerId: string) => {
-    setSelectedImportIds((current) => (
-      current.includes(playerId)
-        ? current.filter((id) => id !== playerId)
-        : [...current, playerId]
-    ));
-  };
-
   const filtered = players.filter((player) => {
     if (activeOnly && !player.is_active) return false;
     if (search && !player.full_name.toLowerCase().includes(search.toLowerCase())) return false;
@@ -330,7 +271,23 @@ export default function PlayersPage() {
   });
 
   const activeCount = players.filter((player) => player.is_active).length;
-  const inactiveCount = players.length - activeCount;
+  const linkedPlayerIds = new Set(players.map((player) => player.id));
+  const availableBasePlayers = basePlayers.filter((player) => !linkedPlayerIds.has(player.id));
+  const normalizedFormName = form.full_name.trim().toLocaleLowerCase();
+  const filteredBasePlayers = availableBasePlayers
+    .filter((player) => (
+      !baseSearch.trim() || player.full_name.toLowerCase().includes(baseSearch.trim().toLowerCase())
+    ))
+    .slice(0, 8);
+  const baseMatchesForForm = !editing && normalizedFormName
+    ? availableBasePlayers
+        .filter((player) => player.full_name.toLowerCase().includes(normalizedFormName))
+        .slice(0, 4)
+    : [];
+  const matchingBasePlayer = !editing && normalizedFormName
+    ? basePlayers.find((player) => player.full_name.trim().toLocaleLowerCase() === normalizedFormName) || null
+    : null;
+  const matchingBasePlayerAlreadyLinked = !!matchingBasePlayer && linkedPlayerIds.has(matchingBasePlayer.id);
 
   const payLabel = (payment: PaymentMethod) => ({
     cash: isEs ? 'Efectivo' : isPt ? 'Dinheiro' : 'Cash',
@@ -338,135 +295,29 @@ export default function PlayersPage() {
     card: isEs ? 'Tarjeta' : isPt ? 'Cartao' : 'Card',
   }[payment]);
 
-  const exportPlayers = () => {
-    const source = filtered.length > 0 ? filtered : players;
-    if (source.length === 0) {
-      toast.warning(isPt ? 'Não há jogadoras para exportar' : isEs ? 'No hay jugadoras para exportar' : 'No players to export');
-      return;
-    }
-
-    const headers = [
-      isPt ? 'Nome' : isEs ? 'Nombre' : 'Name',
-      isPt ? 'Telefone' : isEs ? 'Teléfono' : 'Phone',
-      isPt ? 'Status' : isEs ? 'Estado' : 'Status',
-      isPt ? 'Pagamento' : isEs ? 'Pago' : 'Payment',
-      isPt ? 'Nascimento' : isEs ? 'Nacimiento' : 'Birthdate',
-      isPt ? 'Observações' : isEs ? 'Observaciones' : 'Notes',
-    ];
-
-    const rows = source.map((player) => {
-      const contact = parsePlayerContact(player.notes);
-      return [
-        player.full_name,
-        contact.phone,
-        player.is_active ? (isPt ? 'Ativa' : isEs ? 'Activa' : 'Active') : (isPt ? 'Inativa' : isEs ? 'Inactiva' : 'Inactive'),
-        payLabel(player.payment),
-        player.birthdate || '',
-        contact.notes,
-      ];
-    });
-
-    downloadCsv(
-      `${safeFileName(`players-${leagueId}`)}.csv`,
-      headers,
-      rows
-    );
-
-    toast.success(isPt ? 'Lista exportada.' : isEs ? 'Lista exportada.' : 'Roster exported.');
-  };
-
-  const openWhatsAppRoster = () => {
-    const source = filtered.length > 0 ? filtered : players;
-    if (source.length === 0) {
-      toast.warning(isPt ? 'Não há jogadoras para compartilhar' : isEs ? 'No hay jugadoras para compartir' : 'No players to share');
-      return;
-    }
-
-    const visibleNames = source.slice(0, 20).map((player) => `- ${player.full_name}`);
-    const remainingCount = source.length - visibleNames.length;
-    const title = league?.name || (isPt ? 'Liga' : isEs ? 'Liga' : 'League');
-    const intro = isPt
-      ? `Base atual de jogadoras - ${title}`
-      : isEs
-        ? `Base actual de jugadoras - ${title}`
-        : `Current player roster - ${title}`;
-    const statusLine = activeOnly
-      ? (isPt ? `Filtro: ativas (${source.length})` : isEs ? `Filtro: activas (${source.length})` : `Filter: active (${source.length})`)
-      : (isPt ? `Lista visível (${source.length})` : isEs ? `Lista visible (${source.length})` : `Visible list (${source.length})`);
-    const overflowLine = remainingCount > 0
-      ? (isPt ? `... e mais ${remainingCount}` : isEs ? `... y ${remainingCount} más` : `... and ${remainingCount} more`)
-      : null;
-
-    const message = [intro, statusLine, '', ...visibleNames, overflowLine].filter(Boolean).join('\n');
-    if (typeof window === 'undefined') return;
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-  };
-
-  const openPlayerWhatsApp = (player: Player) => {
-    if (typeof window === 'undefined') return;
-
-    const contact = parsePlayerContact(player.notes);
-    const phone = toWhatsAppPhone(contact.phone);
-    if (!phone) {
-      toast.warning(isPt ? 'Adicione um telefone para abrir direto.' : isEs ? 'Agrega un teléfono para abrir directo.' : 'Add a phone number to open directly.');
-      return;
-    }
-
-    const message = [
-      isPt ? `Oi, ${player.full_name}.` : isEs ? `Hola, ${player.full_name}.` : `Hi, ${player.full_name}.`,
-      isPt ? `Passando para alinhar sua agenda na liga ${league?.name || ''}.` : isEs ? `Te escribo para alinear tu agenda en ${league?.name || ''}.` : `Reaching out to align your schedule for ${league?.name || 'the league'}.`,
-      player.is_active
-        ? (isPt ? 'Voce segue na base ativa da liga.' : isEs ? 'Sigues en la base activa de la liga.' : 'You are currently active in the league roster.')
-        : (isPt ? 'Seu cadastro esta como inativo no momento.' : isEs ? 'Tu registro esta como inactivo por ahora.' : 'Your roster status is currently inactive.'),
-      contact.notes
-        ? (isPt ? `Observacao rapida: ${contact.notes}` : isEs ? `Nota rapida: ${contact.notes}` : `Quick note: ${contact.notes}`)
-        : null,
-      isPt ? 'Me confirma quando puder, por favor.' : isEs ? 'Confirma cuando puedas, por favor.' : 'Please confirm when you can.',
-    ].filter(Boolean).join('\n');
-
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-  };
-
-  const copyPlayerPhone = async (player: Player) => {
-    if (typeof window === 'undefined') return;
-
-    const contact = parsePlayerContact(player.notes);
-    const phone = contact.phone.trim();
-    if (!phone) return;
+  const copyText = async (value: string) => {
+    if (typeof window === 'undefined') return false;
 
     let copied = false;
     if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(phone); copied = true; } catch {}
+      try { await navigator.clipboard.writeText(value); copied = true; } catch {}
     }
     if (!copied) {
-      const ta = Object.assign(document.createElement('textarea'), { value: phone, readOnly: true, style: 'position:fixed;left:-9999px' });
+      const ta = Object.assign(document.createElement('textarea'), { value, readOnly: true, style: 'position:fixed;left:-9999px' });
       document.body.appendChild(ta);
       ta.select();
       copied = document.execCommand('copy');
       document.body.removeChild(ta);
     }
 
-    copied
-      ? toast.success(isPt ? 'Telefone copiado.' : isEs ? 'Teléfono copiado.' : 'Phone copied.')
-      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+    return copied;
   };
 
   const copyJoinLink = async () => {
     if (typeof window === 'undefined') return;
 
     const url = `${window.location.origin}/join/${leagueId}`;
-    let copied = false;
-    if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(url); copied = true; } catch {}
-    }
-    if (!copied) {
-      const ta = Object.assign(document.createElement('textarea'), { value: url, readOnly: true, style: 'position:fixed;left:-9999px' });
-      document.body.appendChild(ta);
-      ta.select();
-      copied = document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
+    const copied = await copyText(url);
 
     copied
       ? toast.success(isPt ? 'Link de cadastro copiado.' : isEs ? 'Link de registro copiado.' : 'Join link copied.')
@@ -488,32 +339,18 @@ export default function PlayersPage() {
               <h1 className="text-2xl font-black tracking-[-0.03em] text-neutral-950 sm:text-4xl">{t('players', locale)}</h1>
               <p className="mt-2 max-w-xl text-sm leading-6 text-neutral-600 sm:text-[15px]">
                 {isPt
-                  ? 'Gerencie presença operacional, status e observações da liga com leitura rápida e edição sem atrito.'
+                  ? 'Gerencie a lista da liga e vincule jogadoras da sua base.'
                   : isEs
-                    ? 'Gestiona presencia operativa, estado y observaciones de la liga con lectura rápida y edición sin fricción.'
-                    : 'Manage operational presence, status, and notes with fast scanning and low-friction editing.'}
+                    ? 'Gestiona la lista de la liga y vincula jugadoras de tu base.'
+                    : 'Manage the league roster and link players from your base.'}
               </p>
               <p className="mt-2 max-w-xl text-xs leading-5 text-neutral-500 sm:text-sm">
-                {isPt ? 'O cadastro continua livre: nome, status e observações podem ser ajustados sem travar a operação.' : isEs ? 'El registro sigue libre: nombre, estado y observaciones pueden ajustarse sin bloquear la operación.' : 'The roster stays flexible: name, status, and notes can be adjusted without blocking operations.'}
+                {isPt ? 'Use a base comum para evitar duplicidades.' : isEs ? 'Usa la base comun para evitar duplicados.' : 'Use the shared base to avoid duplicates.'}
               </p>
             </div>
           </div>
 
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
-            <button
-              onClick={openWhatsAppRoster}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 lg:w-auto"
-            >
-              <Send size={16} />
-              {isPt ? 'Abrir WhatsApp' : isEs ? 'Abrir WhatsApp' : 'Open WhatsApp'}
-            </button>
-            <button
-              onClick={exportPlayers}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white lg:w-auto"
-            >
-              <Download size={16} />
-              {isPt ? 'Exportar CSV' : isEs ? 'Exportar CSV' : 'Export CSV'}
-            </button>
             <button
               onClick={copyJoinLink}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-500/15 lg:w-auto"
@@ -543,10 +380,10 @@ export default function PlayersPage() {
           tone="emerald"
         />
         <MetricCard
-          label={isPt ? 'Inativas' : isEs ? 'Inactivas' : 'Inactive'}
-          value={inactiveCount}
-          detail={isPt ? 'fora da escala' : isEs ? 'fuera de la escala' : 'off rotation'}
-          tone="neutral"
+          label={isPt ? 'Base Livre' : isEs ? 'Base Libre' : 'Available Base'}
+          value={availableBasePlayers.length}
+          detail={isPt ? 'prontas para vincular' : isEs ? 'listas para vincular' : 'ready to link'}
+          tone="teal"
         />
       </div>
 
@@ -572,101 +409,62 @@ export default function PlayersPage() {
         </div>
       </section>
 
-      {availableLeagues.length > 0 && (
+      {availableBasePlayers.length > 0 && (
         <section className="card p-4 sm:p-5">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-              <div className="flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
-                  {isPt ? 'Importar base' : isEs ? 'Importar base' : 'Import roster'}
-                </p>
-                <p className="mt-1 text-sm text-neutral-600">
-                  {isPt
-                    ? 'Puxe jogadoras ativas de outra liga sua. Nomes repetidos nesta liga ficam bloqueados.'
-                    : isEs
-                      ? 'Trae jugadoras activas de otra liga tuya. Los nombres repetidos en esta liga quedan bloqueados.'
-                      : 'Pull active players from another one of your leagues. Duplicate names in this league are blocked.'}
-                </p>
-              </div>
-              <div className="flex flex-col gap-3 sm:flex-row lg:w-auto">
-                <select
-                  className="input-field min-w-[240px]"
-                  value={importLeagueId}
-                  onChange={(event) => setImportLeagueId(event.target.value)}
-                >
-                  <option value="">{isPt ? 'Selecionar liga de origem' : isEs ? 'Seleccionar liga origen' : 'Select source league'}</option>
-                  {availableLeagues.map((item) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={importPlayersFromLeague}
-                  disabled={!importLeagueId || importing || loadingImportCandidates || selectedImportIds.length === 0}
-                  className="inline-flex items-center justify-center rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:opacity-60"
-                >
-                  {importing
-                    ? (isPt ? 'Importando...' : isEs ? 'Importando...' : 'Importing...')
-                    : (isPt ? 'Importar selecionadas' : isEs ? 'Importar seleccionadas' : 'Import selected')}
-                </button>
-              </div>
+          <div className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
+                {isPt ? 'Base comum' : isEs ? 'Base comun' : 'Shared base'}
+              </p>
+              <p className="mt-1 text-sm text-neutral-600">
+                {isPt
+                  ? 'Busque e vincule jogadoras existentes.'
+                  : isEs
+                    ? 'Busca y vincula jugadoras existentes.'
+                    : 'Search and link existing players.'}
+              </p>
             </div>
-
-            {importLeagueId && (
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
-                {loadingImportCandidates ? (
-                  <p className="text-sm text-neutral-500">
-                    {isPt ? 'Carregando jogadoras da liga...' : isEs ? 'Cargando jugadoras de la liga...' : 'Loading source players...'}
-                  </p>
-                ) : importCandidates.length === 0 ? (
-                  <p className="text-sm text-neutral-500">
-                    {isPt ? 'Essa liga nao tem jogadoras ativas para importar.' : isEs ? 'Esta liga no tiene jugadoras activas para importar.' : 'This league has no active players to import.'}
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
-                      <span>{isPt ? 'Selecionar jogadoras' : isEs ? 'Seleccionar jugadoras' : 'Select players'}</span>
-                      <span className="rounded-full bg-white px-2 py-1 ring-1 ring-neutral-200">
-                        {selectedImportIds.length}/{importCandidates.length}
-                      </span>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {importCandidates.map((candidate) => {
-                        const isDuplicate = players.some(
-                          (player) => player.full_name.trim().toLocaleLowerCase() === candidate.full_name.trim().toLocaleLowerCase()
-                        );
-                        const checked = selectedImportIds.includes(candidate.id);
-
-                        return (
-                          <label
-                            key={candidate.id}
-                            className={`flex items-center gap-3 rounded-2xl border px-3 py-2 text-sm ${
-                              isDuplicate
-                                ? 'border-amber-200 bg-amber-50 text-amber-700'
-                                : checked
-                                  ? 'border-teal-200 bg-white text-neutral-800'
-                                  : 'border-neutral-200 bg-white text-neutral-700'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={isDuplicate}
-                              onChange={() => toggleImportCandidate(candidate.id)}
-                            />
-                            <span className="min-w-0 flex-1 truncate">{candidate.full_name}</span>
-                            {isDuplicate && (
-                              <span className="text-[10px] font-bold uppercase tracking-[0.16em]">
-                                {isPt ? 'Duplicada' : isEs ? 'Duplicada' : 'Duplicate'}
-                              </span>
-                            )}
-                          </label>
-                        );
-                      })}
-                    </div>
+            <div className="self-start rounded-2xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 ring-1 ring-sky-200/80">
+              {filteredBasePlayers.length}/{availableBasePlayers.length}
+            </div>
+            </div>
+            <div className="space-y-3">
+              <div className="relative">
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <input
+                  className="input-field pl-11"
+                  value={baseSearch}
+                  onChange={(event) => setBaseSearch(event.target.value)}
+                  placeholder={isPt ? 'Buscar jogadora na base comum...' : isEs ? 'Buscar jugadora en la base comun...' : 'Search player in shared base...'}
+                />
+              </div>
+              <div className="grid gap-2 lg:grid-cols-2">
+                {filteredBasePlayers.length === 0 ? (
+                  <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
+                    {isPt ? 'Nenhuma jogadora encontrada com esse filtro.' : isEs ? 'No se encontro ninguna jugadora con ese filtro.' : 'No players found for this filter.'}
                   </div>
+                ) : (
+                  filteredBasePlayers.map((player) => (
+                    <div key={player.id} className="flex items-center justify-between rounded-2xl border border-neutral-200 bg-white px-3 py-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-neutral-900">{player.full_name}</p>
+                        <p className="mt-1 text-xs text-neutral-500">
+                          {player.is_active ? (isPt ? 'Ativa na base' : isEs ? 'Activa en la base' : 'Active in base') : (isPt ? 'Inativa na base' : isEs ? 'Inactiva en la base' : 'Inactive in base')}
+                          {(playerLeagueCounts[player.id] || 0) > 0 ? ` • ${playerLeagueCounts[player.id]} ${isPt ? 'liga(s)' : isEs ? 'liga(s)' : 'league(s)'}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => linkExistingPlayer(player.id)}
+                        className="rounded-2xl bg-teal-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-teal-700"
+                      >
+                        {isPt ? 'Vincular' : isEs ? 'Vincular' : 'Link'}
+                      </button>
+                    </div>
+                  ))
                 )}
               </div>
-            )}
+            </div>
           </div>
         </section>
       )}
@@ -683,10 +481,10 @@ export default function PlayersPage() {
           <p className="text-lg font-bold text-neutral-900">{t('noPlayers', locale)}</p>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-500">
             {isPt
-              ? 'Monte a base da liga para liberar sorteios, presença e atribuição de partidas.'
+              ? 'Adicione ou vincule jogadoras para montar a lista da liga.'
               : isEs
-                ? 'Construye la base de la liga para habilitar sorteos, asistencia y asignacion de partidos.'
-                : 'Build the roster to unlock attendance, round setup, and match assignment.'}
+                ? 'Agrega o vincula jugadoras para armar la lista de la liga.'
+                : 'Add or link players to build the league roster.'}
           </p>
           <button onClick={openNew} className="btn-primary mt-6 inline-flex items-center gap-2">
             <Plus size={16} />
@@ -698,7 +496,6 @@ export default function PlayersPage() {
           {filtered.map((player) => {
             const contact = parsePlayerContact(player.notes);
             const rawPhone = contact.phone.trim();
-            const phone = toWhatsAppPhone(rawPhone);
             const hasPhone = !!rawPhone;
 
             return (
@@ -725,14 +522,23 @@ export default function PlayersPage() {
                       <p className={`truncate text-sm font-bold ${player.is_active ? 'text-neutral-900' : 'text-neutral-400 line-through'}`}>
                         {player.full_name}
                       </p>
+                      {(playerLeagueCounts[player.id] || 0) > 1 && (
+                        <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700 ring-1 ring-sky-200/80">
+                          {isPt
+                            ? `${playerLeagueCounts[player.id]} ligas`
+                            : isEs
+                              ? `${playerLeagueCounts[player.id]} ligas`
+                              : `${playerLeagueCounts[player.id]} leagues`}
+                        </span>
+                      )}
                       {hasPhone && (
                         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ring-1 ${
-                          phone
+                          toWhatsAppPhone(rawPhone)
                             ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80'
                             : 'bg-amber-50 text-amber-700 ring-amber-200/80'
                         }`}>
                           <Smartphone size={11} />
-                          {phone ? (isPt ? 'Whats' : isEs ? 'Whats' : 'Phone') : (isPt ? 'Revisar' : isEs ? 'Revisar' : 'Check')}
+                          {toWhatsAppPhone(rawPhone) ? (isPt ? 'Whats' : isEs ? 'Whats' : 'Phone') : (isPt ? 'Revisar' : isEs ? 'Revisar' : 'Check')}
                         </span>
                       )}
                       <span className={player.is_active ? 'badge-present' : 'badge-absent'}>
@@ -746,20 +552,6 @@ export default function PlayersPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-1">
-                  {hasPhone && (
-                    <button
-                      onClick={() => copyPlayerPhone(player)}
-                      title={isPt ? 'Copiar telefone' : isEs ? 'Copiar teléfono' : 'Copy phone'}
-                      className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-                    >
-                      <Copy size={15} />
-                    </button>
-                  )}
-                  {phone && (
-                    <button onClick={() => openPlayerWhatsApp(player)} className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-emerald-50 hover:text-emerald-600">
-                      <MessageCircle size={15} />
-                    </button>
-                  )}
                   <button onClick={() => openEdit(player)} className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-teal-50 hover:text-teal-600">
                     <Edit2 size={15} />
                   </button>
@@ -813,6 +605,49 @@ export default function PlayersPage() {
                   autoFocus
                 />
                 <FieldError message={errors.full_name} />
+                {matchingBasePlayer && (
+                  <div className={`mt-3 rounded-2xl border px-3 py-3 text-sm ${
+                    matchingBasePlayerAlreadyLinked
+                      ? 'border-amber-200 bg-amber-50 text-amber-800'
+                      : 'border-sky-200 bg-sky-50 text-sky-800'
+                  }`}>
+                    <p className="font-semibold">
+                      {matchingBasePlayerAlreadyLinked
+                        ? (isPt ? 'Este nome ja esta nesta liga.' : isEs ? 'Este nombre ya esta en esta liga.' : 'This name is already in this league.')
+                        : (isPt ? 'Encontramos esse nome na sua base comum.' : isEs ? 'Encontramos este nombre en tu base comun.' : 'We found this name in your shared base.')}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-current/80">
+                      {matchingBasePlayerAlreadyLinked
+                        ? (isPt ? 'Para evitar duplicidade, edite o cadastro atual na lista.' : isEs ? 'Para evitar duplicados, edita el registro actual en la lista.' : 'To avoid duplicates, edit the current record in the list.')
+                        : (isPt ? 'Ao salvar, a tela vai reutilizar esse cadastro e apenas vincular a jogadora a esta liga.' : isEs ? 'Al guardar, la pantalla reutilizara este registro y solo vinculara la jugadora a esta liga.' : 'On save, the screen will reuse this record and only link the player to this league.')}
+                    </p>
+                  </div>
+                )}
+                {!matchingBasePlayer && baseMatchesForForm.length > 0 && (
+                  <div className="mt-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                      {isPt ? 'Resultados na base' : isEs ? 'Resultados en la base' : 'Base results'}
+                    </p>
+                    <div className="mt-2 grid gap-2">
+                      {baseMatchesForForm.map((player) => (
+                        <button
+                          key={player.id}
+                          type="button"
+                          onClick={async () => {
+                            await linkExistingPlayer(player.id);
+                            setShowForm(false);
+                          }}
+                          className="flex items-center justify-between rounded-2xl border border-white bg-white px-3 py-2 text-left transition hover:border-teal-200 hover:bg-teal-50"
+                        >
+                          <span className="truncate text-sm font-medium text-neutral-800">{player.full_name}</span>
+                          <span className="ml-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-700">
+                            {isPt ? 'vincular' : isEs ? 'vincular' : 'link'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {!errors.full_name && (
                   <p className="mt-1 text-xs leading-5 text-neutral-400">
                     {isPt
@@ -947,3 +782,6 @@ function MetricCard({ label, value, detail, tone }: {
     </div>
   );
 }
+
+
+
