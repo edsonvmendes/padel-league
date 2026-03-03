@@ -46,25 +46,27 @@ export default function AppDashboard() {
   }, [user]);
 
   const loadDashboard = async () => {
-    const [{ data: leaguesData }, { data: roundsData }, { data: playersData }] = await Promise.all([
+    const [{ data: leaguesData }, { data: roundsData }, { data: rosterData }, { data: basePlayersData }] = await Promise.all([
       run(() => db.from('leagues').select('*').order('created_at', { ascending: false })),
       run(() => db.from('rounds').select('*')),
-      run(() => db.from('players').select('id, league_id, is_active').eq('is_active', true)),
+      run(() => db.from('league_roster').select('id, league_id').eq('is_active', true)),
+      run(() => db.from('players').select('id').eq('is_active', true)),
     ]);
 
     const lg = leaguesData || [];
     const rd = roundsData || [];
-    const pl = playersData || [];
+    const roster = rosterData || [];
+    const basePlayers = basePlayersData || [];
 
     setStats({
       totalLeagues: lg.length,
-      totalPlayers: pl.length,
+      totalPlayers: basePlayers.length,
       totalRounds: rd.length,
       roundsInProgress: rd.filter((r: Round) => r.status === 'running').length,
       completionRate: lg.length > 0
         ? Math.round((rd.filter((r: Round) => r.status === 'closed').length / Math.max(lg.reduce((sum: number, league: League) => sum + Math.max(league.rounds_count, 0), 0), 1)) * 100)
         : 0,
-      averagePlayersPerLeague: lg.length > 0 ? Number((pl.length / lg.length).toFixed(1)) : 0,
+      averagePlayersPerLeague: lg.length > 0 ? Number((roster.length / lg.length).toFixed(1)) : 0,
     });
 
     const enriched: RecentLeague[] = lg.map((league: League) => {
@@ -73,7 +75,7 @@ export default function AppDashboard() {
       return {
         ...league,
         lastRound: sorted[0] || null,
-        playerCount: pl.filter((p: { league_id: string }) => p.league_id === league.id).length,
+        playerCount: roster.filter((p: { league_id: string }) => p.league_id === league.id).length,
         openRounds: leagueRounds.filter((r: Round) => r.status === 'running').length,
       };
     });

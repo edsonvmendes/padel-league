@@ -87,7 +87,7 @@ export default function LeaguesPage() {
 
     const enriched = await Promise.all(ls.map(async (league: League) => {
       const [{ count: playerCount }, { count: roundCount }] = await Promise.all([
-        db.from('players').select('id', { count: 'exact', head: true }).eq('league_id', league.id).eq('is_active', true),
+        db.from('league_roster').select('id', { count: 'exact', head: true }).eq('league_id', league.id).eq('is_active', true),
         db.from('rounds').select('id', { count: 'exact', head: true }).eq('league_id', league.id),
       ]);
 
@@ -213,7 +213,7 @@ export default function LeaguesPage() {
       run(() => db.from('rules').select('*').eq('league_id', league.id).eq('scope', 'league').maybeSingle()),
       run(() => db.from('league_time_slots').select('*').eq('league_id', league.id).order('sort_order')),
       run(() => db.from('courts').select('*').eq('league_id', league.id).order('court_number')),
-      run(() => db.from('players').select('*').eq('league_id', league.id).eq('is_active', true).order('full_name')),
+      run(() => db.from('league_roster').select('*').eq('league_id', league.id).eq('is_active', true).order('full_name')),
     ]);
 
     const cloneName = isPt ? `${league.name} (cópia)` : isEs ? `${league.name} (copia)` : `${league.name} (copy)`;
@@ -275,15 +275,10 @@ export default function LeaguesPage() {
 
     if ((sourcePlayers || []).length > 0) {
       await runOrThrow(
-        () => db.from('players').insert(
-          (sourcePlayers || []).map((player: { full_name: string; birthdate: string | null; payment: string; notes: string | null; is_active: boolean }) => ({
+        () => db.from('league_players').insert(
+          (sourcePlayers || []).map((player: { id: string }) => ({
             league_id: duplicated.id,
-            owner_user_id: user!.id,
-            full_name: player.full_name,
-            birthdate: player.birthdate,
-            payment: player.payment,
-            notes: player.notes,
-            is_active: player.is_active,
+            player_id: player.id,
           }))
         ),
         isPt ? 'Erro ao copiar jogadoras' : isEs ? 'Error al copiar jugadoras' : 'Failed to copy players'

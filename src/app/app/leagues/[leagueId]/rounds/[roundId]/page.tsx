@@ -11,7 +11,7 @@ import { t } from '@/lib/i18n';
 import { MATCH_PAIRINGS, calculateGroupPoints, isValidScore } from '@/lib/scoring-engine';
 import {
   ArrowLeft, PlayCircle, Lock, Check, MessageCircle, MapPin, CalendarPlus,
-  Trophy, ChevronDown, ChevronUp, AlertTriangle, XCircle,
+  Trophy, ChevronDown, ChevronUp, AlertTriangle, XCircle, Link2,
 } from 'lucide-react';
 
 interface GroupWithDetails {
@@ -92,7 +92,7 @@ export default function RoundDetailPage() {
         run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
         run(() => db.from('courts').select('*').eq('league_id', leagueId).order('court_number')),
         run(() => db.from('round_court_groups').select('*').eq('round_id', roundId)),
-        run(() => db.from('players').select('*').eq('league_id', leagueId).eq('is_active', true).order('full_name')),
+        run(() => db.from('league_roster').select('*').eq('league_id', leagueId).eq('is_active', true).order('full_name')),
         run(() => db.from('rules').select('*').or(`scope.eq.global,league_id.eq.${leagueId}`).order('scope', { ascending: false }).limit(1)),
       ]);
 
@@ -469,19 +469,78 @@ export default function RoundDetailPage() {
     return [...title, ...body].join('\n').trim();
   };
 
+  const copyText = async (value: string) => {
+    let ok = false;
+
+    if (typeof window !== 'undefined' && window.isSecureContext && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        ok = true;
+      } catch {}
+    }
+
+    if (!ok && typeof document !== 'undefined') {
+      const ta = Object.assign(document.createElement('textarea'), {
+        value,
+        readOnly: true,
+        style: 'position:fixed;left:-9999px',
+      });
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+
+    return ok;
+  };
+
+  const copyConfirmationLink = async (cpId: string) => {
+    if (isMutating || typeof window === 'undefined') return;
+
+    setActionError(null);
+
+    try {
+      const token = await runOrThrow(
+        () => db.rpc('ensure_round_confirmation_link', { p_round_court_player_id: cpId }),
+        isPt ? 'Erro ao gerar link de presenca' : isEs ? 'Error al generar enlace de asistencia' : 'Failed to generate attendance link'
+      );
+
+      const ok = await copyText(`${window.location.origin}/confirm/${token}`);
+      if (ok) {
+        toast.success(
+          isPt
+            ? 'Link de presenca copiado. Envie no WhatsApp para esta jogadora.'
+            : isEs
+              ? 'Enlace de asistencia copiado. Envialo por WhatsApp a esta jugadora.'
+              : 'Attendance link copied. Send it by WhatsApp to this player.'
+        );
+        return;
+      }
+
+      toast.error(
+        isPt
+          ? 'Nao foi possivel copiar o link agora.'
+          : isEs
+            ? 'No se pudo copiar el enlace ahora.'
+            : 'Could not copy the link right now.'
+      );
+    } catch (error: any) {
+      setActionError(getActionErrorMessage(
+        error,
+        isPt
+          ? 'Nao foi possivel gerar o link de confirmacao.'
+          : isEs
+            ? 'No se pudo generar el enlace de confirmacion.'
+            : 'Could not generate the confirmation link.'
+      ));
+    }
+  };
+
   const copyWhatsApp = async () => {
     const msg = await buildRoundWhatsAppMessage();
     if (!msg) return;
 
-    let ok = false;
-    if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(msg); ok = true; } catch {}
-    }
-    if (!ok) {
-      const ta = Object.assign(document.createElement('textarea'), { value: msg, readOnly: true, style: 'position:fixed;left:-9999px' });
-      document.body.appendChild(ta); ta.select();
-      ok = document.execCommand('copy'); document.body.removeChild(ta);
-    }
+    const ok = await copyText(msg);
     ok
       ? toast.success(isPt ? 'Copiado.' : isEs ? 'Copiado.' : 'Copied.')
       : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
@@ -742,6 +801,7 @@ export default function RoundDetailPage() {
             onRemovePlayer={removePlayer}
             onToggleAttendance={toggleAttendance}
             onSetSubstituteName={setSubstituteName}
+            onCopyConfirmationLink={copyConfirmationLink}
             onSaveScore={saveScore}
             onSetPhysical={setPhysicalCourt}
             onSetSlot={setGroupSlot}
@@ -756,7 +816,7 @@ export default function RoundDetailPage() {
 // ─────────────────────────────────────────────────────────────
 // COURT CARD
 // ─────────────────────────────────────────────────────────────
-function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSetSubstituteName, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
+function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSetSubstituteName, onCopyConfirmationLink, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
   g: GroupWithDetails; isClosed: boolean; physicalCourtsCount: number;
   allPlayers: Player[]; allGroups: GroupWithDetails[]; slots: LeagueTimeSlot[]; rules: Rules | null;
   expandedGroup: string | null; disabled: boolean; locale: string;
@@ -765,6 +825,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
   onRemovePlayer: (cpId: string) => void;
   onToggleAttendance: (cpId: string, att: string) => void;
   onSetSubstituteName: (cpId: string, substituteName: string) => void;
+  onCopyConfirmationLink: (cpId: string) => void;
   onSaveScore: (mId: string, s1: number, s2: number) => void;
   onSetPhysical: (gId: string, n: number | null) => void;
   onSetSlot: (gId: string, slotId: string) => void;
@@ -895,6 +956,14 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                             className="w-full rounded-xl border border-neutral-200 bg-white px-2 py-1.5 text-[10px] text-neutral-700 placeholder:text-neutral-400"
                           />
                         )}
+                        <button
+                          onClick={() => onCopyConfirmationLink(cp.id)}
+                          className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 bg-sky-500/10 px-2 py-1.5 text-[10px] font-semibold text-sky-700 transition hover:bg-sky-500/15"
+                          title={isPt ? 'Copiar link de confirmacao' : isEs ? 'Copiar enlace de confirmacion' : 'Copy confirmation link'}
+                        >
+                          <Link2 size={10} />
+                          {isPt ? 'link presenca' : isEs ? 'link asistencia' : 'attendance link'}
+                        </button>
                         <button onClick={() => onRemovePlayer(cp.id)}
                           className="text-[10px] text-neutral-400 hover:text-red-500 flex items-center justify-center gap-0.5">
                           <XCircle size={10} />

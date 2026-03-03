@@ -60,7 +60,7 @@ export default function LeagueRankingPage() {
       { data: rulesData },
     ] = await Promise.all([
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
-      run(() => db.from('players').select('*').eq('league_id', leagueId).order('full_name')),
+      run(() => db.from('league_roster').select('*').eq('league_id', leagueId).order('full_name')),
       run(() => db.from('rounds').select('*').eq('league_id', leagueId).eq('status', 'closed').order('number')),
       run(() => db.from('rules').select('*').or(`scope.eq.global,league_id.eq.${leagueId}`).order('scope', { ascending: false }).limit(1)),
     ]);

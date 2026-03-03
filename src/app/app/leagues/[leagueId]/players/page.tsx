@@ -75,7 +75,7 @@ export default function PlayersPage() {
       setLoadingImportCandidates(true);
 
       const sourcePlayers = await runOrThrow(
-        () => db.from('players').select('*').eq('league_id', importLeagueId).eq('is_active', true).order('full_name'),
+        () => db.from('league_roster').select('*').eq('league_id', importLeagueId).eq('is_active', true).order('full_name'),
         isPt ? 'Erro ao carregar jogadoras da liga de origem' : isEs ? 'Error al cargar jugadoras de la liga origen' : 'Failed to load source players'
       );
 
@@ -110,7 +110,7 @@ export default function PlayersPage() {
   const load = async () => {
     const [{ data: playerData }, { data: leagueData }, { data: leaguesData }] = await Promise.all([
       run(
-        () => db.from('players').select('*').eq('league_id', leagueId).order('full_name'),
+        () => db.from('league_roster').select('*').eq('league_id', leagueId).order('full_name'),
         isEs ? 'Error al cargar jugadoras' : isPt ? 'Erro ao carregar jogadoras' : 'Failed to load players'
       ),
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
@@ -187,9 +187,14 @@ export default function PlayersPage() {
         );
         toast.success(isEs ? 'Jugadora actualizada.' : isPt ? 'Jogadora atualizada.' : 'Player updated.');
       } else {
-        await runOrThrow(
-          () => db.from('players').insert({ ...payload, league_id: leagueId, owner_user_id: user!.id }),
+        const created = await runOrThrow(
+          () => db.from('players').insert({ ...payload, league_id: null, owner_user_id: user!.id }).select('id').single(),
           isEs ? 'Error al agregar jugadora' : isPt ? 'Erro ao adicionar jogadora' : 'Failed to add player'
+        );
+        if (!created) return;
+        await runOrThrow(
+          () => db.from('league_players').insert({ league_id: leagueId, player_id: (created as { id: string }).id }),
+          isEs ? 'Error al vincular jugadora a la liga' : isPt ? 'Erro ao vincular jogadora a liga' : 'Failed to link player to league'
         );
         toast.success(isEs ? 'Jugadora agregada.' : isPt ? 'Jogadora adicionada.' : 'Player added.');
       }
@@ -217,9 +222,21 @@ export default function PlayersPage() {
     if (!ok) return;
 
     await runOrThrow(
-      () => db.from('players').delete().eq('id', player.id),
-      isEs ? 'Error al eliminar' : isPt ? 'Erro ao excluir' : 'Failed to delete'
+      () => db.from('league_players').delete().eq('league_id', leagueId).eq('player_id', player.id),
+      isEs ? 'Error al desvincular jugadora' : isPt ? 'Erro ao desvincular jogadora' : 'Failed to unlink player'
     );
+
+    const remainingLinksResult = await run(() =>
+      db.from('league_players').select('id', { count: 'exact', head: true }).eq('player_id', player.id)
+    );
+    const remainingLinks = (remainingLinksResult as any).count || 0;
+
+    if (!remainingLinks) {
+      await runOrThrow(
+        () => db.from('players').delete().eq('id', player.id),
+        isEs ? 'Error al eliminar' : isPt ? 'Erro ao excluir' : 'Failed to delete'
+      );
+    }
 
     toast.success(isEs ? 'Jugadora eliminada.' : isPt ? 'Jogadora excluída.' : 'Player deleted.');
     load();
@@ -259,15 +276,7 @@ export default function PlayersPage() {
       const toInsert = importCandidates
         .filter((player) => selectedImportIds.includes(player.id))
         .filter((player) => !normalizedExisting.has(player.full_name.trim().toLocaleLowerCase()))
-        .map((player: Player) => ({
-          league_id: leagueId,
-          owner_user_id: user!.id,
-          full_name: player.full_name,
-          birthdate: player.birthdate,
-          payment: player.payment,
-          notes: player.notes,
-          is_active: true,
-        }));
+        .map((player: Player) => player.id);
 
       if (toInsert.length === 0) {
         toast.warning(
@@ -281,7 +290,12 @@ export default function PlayersPage() {
       }
 
       await runOrThrow(
-        () => db.from('players').insert(toInsert),
+        () => db.from('league_players').insert(
+          toInsert.map((playerId) => ({
+            league_id: leagueId,
+            player_id: playerId,
+          }))
+        ),
         isPt ? 'Erro ao importar jogadoras' : isEs ? 'Error al importar jugadoras' : 'Failed to import players'
       );
 
