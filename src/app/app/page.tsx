@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
@@ -41,11 +41,9 @@ export default function AppDashboard() {
   const [leagues, setLeagues] = useState<RecentLeague[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (user) loadDashboard();
-  }, [user]);
+  const loadDashboard = useCallback(async () => {
+    if (!user) return;
 
-  const loadDashboard = async () => {
     const [{ data: leaguesData }, { data: roundsData }, { data: rosterData }, { data: basePlayersData }] = await Promise.all([
       run(() => db.from('leagues').select('*').order('created_at', { ascending: false })),
       run(() => db.from('rounds').select('*')),
@@ -82,7 +80,11 @@ export default function AppDashboard() {
 
     setLeagues(enriched);
     setLoading(false);
-  };
+  }, [db, run, user]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
 
   const greeting = () => {
     const hour = new Date().getHours();

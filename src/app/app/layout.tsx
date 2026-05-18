@@ -3,9 +3,11 @@
 import { useEffect, useState, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
+import { useDb } from '@/hooks/useDb';
 import { t } from '@/lib/i18n';
 import { BrandMark } from '@/components/BrandMark';
 import { ProductSignature } from '@/components/ProductSignature';
+import { League } from '@/types/database';
 import { Home, Users, Calendar, Settings, LogOut, Menu, X, Trophy, BookOpen } from 'lucide-react';
 
 interface NavItem {
@@ -17,16 +19,37 @@ interface NavItem {
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { user, profile, loading, locale, setLocale, signOut } = useAuth();
+  const { db, run } = useDb();
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [leagueId, setLeagueId] = useState<string | null>(null);
+  const [activeLeague, setActiveLeague] = useState<League | null>(null);
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] || '';
 
   useEffect(() => {
     const match = pathname.match(/\/app\/leagues\/([^/]+)/);
     setLeagueId(match ? match[1] : null);
   }, [pathname]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadActiveLeague = async () => {
+      if (!leagueId || !user) {
+        setActiveLeague(null);
+        return;
+      }
+
+      const { data } = await run(() => db.from('leagues').select('*').eq('id', leagueId).single());
+      if (active) setActiveLeague((data as League) || null);
+    };
+
+    loadActiveLeague();
+    return () => {
+      active = false;
+    };
+  }, [db, leagueId, run, user]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -118,8 +141,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <>
               <div className="pt-3 pb-1 px-3">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                  {locale === 'es' ? 'Liga' : 'League'}
+                  {locale === 'pt' ? 'Liga atual' : locale === 'es' ? 'Liga actual' : 'Current league'}
                 </p>
+              </div>
+              <div className="mx-1 mb-2 rounded-2xl border border-teal-500/10 bg-teal-50/80 px-3 py-3">
+                <p className="truncate text-sm font-bold text-neutral-900">
+                  {activeLeague?.name || (locale === 'pt' ? 'Carregando liga...' : locale === 'es' ? 'Cargando liga...' : 'Loading league...')}
+                </p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-700 ring-1 ring-teal-500/10">
+                    {activeLeague?.is_finished
+                      ? (locale === 'pt' ? 'finalizada' : locale === 'es' ? 'finalizada' : 'finished')
+                      : (locale === 'pt' ? 'em operação' : locale === 'es' ? 'en operación' : 'active')}
+                  </span>
+                  <button
+                    onClick={() => handleNav('/app/leagues')}
+                    className="text-[11px] font-semibold text-neutral-500 transition hover:text-teal-700"
+                  >
+                    {locale === 'pt' ? 'Trocar' : locale === 'es' ? 'Cambiar' : 'Switch'}
+                  </button>
+                </div>
               </div>
               {leagueNav.map(item => (
                 <NavButton key={item.href} item={item} active={isActive(item.href)} onClick={() => handleNav(item.href)} />
@@ -159,13 +200,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-14 border-b border-black/5 bg-[rgba(255,251,244,0.86)] backdrop-blur-xl flex items-center justify-between px-4 z-40">
-        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 -ml-2 text-neutral-600">
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label={sidebarOpen ? (locale === 'pt' ? 'Fechar menu' : locale === 'es' ? 'Cerrar menu' : 'Close menu') : (locale === 'pt' ? 'Abrir menu' : locale === 'es' ? 'Abrir menu' : 'Open menu')}
+          className="p-2 -ml-2 text-neutral-600"
+        >
           {sidebarOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
         <div className="flex items-center">
           <BrandMark />
         </div>
-        <button onClick={() => setLocale(locale === 'en' ? 'es' : locale === 'es' ? 'pt' : 'en')}
+        <button
+          onClick={() => setLocale(locale === 'en' ? 'es' : locale === 'es' ? 'pt' : 'en')}
+          aria-label={locale === 'pt' ? 'Trocar idioma' : locale === 'es' ? 'Cambiar idioma' : 'Change language'}
           className="px-2 py-1 rounded text-xs font-medium bg-neutral-100 text-neutral-600">
           {locale.toUpperCase()}
         </button>
@@ -188,6 +235,20 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {allNav.map(item => (
               <NavButton key={item.href} item={item} active={isActive(item.href)} onClick={() => handleNav(item.href)} />
             ))}
+            {leagueId && (
+              <div className="my-3 rounded-2xl border border-teal-500/10 bg-teal-50 px-3 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-700">
+                  {locale === 'pt' ? 'Liga atual' : locale === 'es' ? 'Liga actual' : 'Current league'}
+                </p>
+                <p className="mt-1 truncate text-sm font-bold text-neutral-800">{activeLeague?.name || '-'}</p>
+                <button
+                  onClick={() => handleNav('/app/leagues')}
+                  className="mt-2 text-xs font-semibold text-teal-700"
+                >
+                  {locale === 'pt' ? 'Trocar liga' : locale === 'es' ? 'Cambiar liga' : 'Switch league'}
+                </button>
+              </div>
+            )}
             <hr className="my-3" />
             <div className="rounded-2xl border border-black/5 bg-neutral-50 px-3 py-2.5">
               <ProductSignature compact />

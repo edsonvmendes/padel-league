@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb, validate } from '@/hooks/useDb';
 import { useToast } from '@/components/ToastProvider';
 import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList, FieldError } from '@/components/Skeleton';
-import { League, Player, PaymentMethod } from '@/types/database';
+import { Player, PaymentMethod } from '@/types/database';
 import { t } from '@/lib/i18n';
 import { buildPlayerNotes, normalizePhoneInput, parsePlayerContact, toWhatsAppPhone } from '@/lib/playerContact';
 import { Plus, Search, X, Edit2, Trash2, Users, Copy, Smartphone } from 'lucide-react';
@@ -42,7 +42,6 @@ export default function PlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [basePlayers, setBasePlayers] = useState<Player[]>([]);
   const [playerLeagueCounts, setPlayerLeagueCounts] = useState<Record<string, number>>({});
-  const [league, setLeague] = useState<League | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [baseSearch, setBaseSearch] = useState('');
@@ -54,12 +53,10 @@ export default function PlayersPage() {
   const [saving, setSaving] = useState(false);
   const [linkingPlayerId, setLinkingPlayerId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user && leagueId) load();
-  }, [user, leagueId]);
+  const load = useCallback(async () => {
+    if (!user || !leagueId) return;
 
-  const load = async () => {
-    const [{ data: playerData }, { data: basePlayerData }, { data: leagueLinkData }, { data: leagueData }] = await Promise.all([
+    const [{ data: playerData }, { data: basePlayerData }, { data: leagueLinkData }] = await Promise.all([
       run(
         () => db.from('league_roster').select('*').eq('league_id', leagueId).order('full_name'),
         isEs ? 'Error al cargar jugadoras' : isPt ? 'Erro ao carregar jogadoras' : 'Failed to load players'
@@ -72,7 +69,6 @@ export default function PlayersPage() {
         () => db.from('league_players').select('player_id, league_id'),
         isEs ? 'Error al cargar vinculos' : isPt ? 'Erro ao carregar vinculos' : 'Failed to load player links'
       ),
-      run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
     ]);
 
     setPlayers(playerData || []);
@@ -83,9 +79,12 @@ export default function PlayersPage() {
         return acc;
       }, {})
     );
-    setLeague(leagueData || null);
     setLoading(false);
-  };
+  }, [db, isEs, isPt, leagueId, run, user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const linkExistingPlayer = async (playerId: string) => {
     if (linkingPlayerId) return;
@@ -346,9 +345,11 @@ export default function PlayersPage() {
     const url = `${window.location.origin}/join/${leagueId}`;
     const copied = await copyText(url);
 
-    copied
-      ? toast.success(isPt ? 'Link de cadastro copiado.' : isEs ? 'Link de registro copiado.' : 'Join link copied.')
-      : toast.error(isPt ? 'Nao foi possivel copiar o link agora.' : isEs ? 'No fue posible copiar el link ahora.' : 'Could not copy the link right now.');
+    if (copied) {
+      toast.success(isPt ? 'Link de cadastro copiado.' : isEs ? 'Link de registro copiado.' : 'Join link copied.');
+    } else {
+      toast.error(isPt ? 'Nao foi possivel copiar o link agora.' : isEs ? 'No fue posible copiar el link ahora.' : 'Could not copy the link right now.');
+    }
   };
 
   const formPhoneReady = !form.phone || !!toWhatsAppPhone(form.phone);
@@ -380,6 +381,7 @@ export default function PlayersPage() {
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <button
               onClick={copyJoinLink}
+              aria-label={isPt ? 'Copiar link publico de cadastro' : isEs ? 'Copiar link publico de registro' : 'Copy public join link'}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-500/15 lg:w-auto"
             >
               <Copy size={16} />
@@ -427,6 +429,7 @@ export default function PlayersPage() {
           </div>
           <button
             onClick={() => setActiveOnly(!activeOnly)}
+            aria-pressed={activeOnly}
             className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition ${
               activeOnly ? 'bg-teal-500/10 text-teal-700 ring-1 ring-teal-500/15' : 'bg-neutral-900/5 text-neutral-500 ring-1 ring-neutral-900/6'
             }`}
@@ -547,14 +550,15 @@ export default function PlayersPage() {
             return (
               <div
                 key={player.id}
-                className="rounded-[1.6rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-4 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.3)]"
+                className="rounded-2xl border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.97),rgba(248,250,252,0.94))] px-3 py-3 shadow-[0_16px_34px_-30px_rgba(15,23,42,0.28)]"
               >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <button
                     onClick={() => toggleActive(player)}
+                    aria-label={player.is_active ? (isEs ? `Desactivar ${player.full_name}` : isPt ? `Desativar ${player.full_name}` : `Deactivate ${player.full_name}`) : (isEs ? `Activar ${player.full_name}` : isPt ? `Ativar ${player.full_name}` : `Activate ${player.full_name}`)}
                     title={player.is_active ? (isEs ? 'Desactivar' : isPt ? 'Desativar' : 'Deactivate') : (isEs ? 'Activar' : isPt ? 'Ativar' : 'Activate')}
-                    className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl text-sm font-bold transition ${
+                    className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-sm font-bold transition ${
                       player.is_active
                         ? 'bg-teal-500/12 text-teal-700 ring-1 ring-teal-500/12 hover:bg-teal-500/18'
                         : 'bg-neutral-900/5 text-neutral-400 ring-1 ring-neutral-900/6 hover:bg-neutral-900/8'
@@ -569,7 +573,7 @@ export default function PlayersPage() {
                         {player.full_name}
                       </p>
                       {(playerLeagueCounts[player.id] || 0) > 1 && (
-                        <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-700 ring-1 ring-sky-200/80">
+                        <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-200/80">
                           {isPt
                             ? `${playerLeagueCounts[player.id]} ligas`
                             : isEs
@@ -578,7 +582,7 @@ export default function PlayersPage() {
                         </span>
                       )}
                       {hasPhone && (
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ring-1 ${
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
                           toWhatsAppPhone(rawPhone)
                             ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80'
                             : 'bg-amber-50 text-amber-700 ring-amber-200/80'
@@ -597,12 +601,22 @@ export default function PlayersPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-1">
-                  <button onClick={() => openEdit(player)} className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-teal-50 hover:text-teal-600">
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    onClick={() => openEdit(player)}
+                    aria-label={isPt ? `Editar ${player.full_name}` : isEs ? `Editar ${player.full_name}` : `Edit ${player.full_name}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-neutral-500 transition hover:bg-teal-50 hover:text-teal-700"
+                  >
                     <Edit2 size={15} />
+                    <span className="hidden sm:inline">{isPt ? 'Editar' : isEs ? 'Editar' : 'Edit'}</span>
                   </button>
-                  <button onClick={() => handleDelete(player)} className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500">
+                  <button
+                    onClick={() => handleDelete(player)}
+                    aria-label={isPt ? `Remover ${player.full_name}` : isEs ? `Quitar ${player.full_name}` : `Remove ${player.full_name}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold text-neutral-500 transition hover:bg-red-50 hover:text-red-600"
+                  >
                     <Trash2 size={15} />
+                    <span className="hidden sm:inline">{isPt ? 'Remover' : isEs ? 'Quitar' : 'Remove'}</span>
                   </button>
                 </div>
               </div>

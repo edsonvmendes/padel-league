@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
@@ -71,9 +71,9 @@ export default function RoundDetailPage() {
     return `Physical court was moved automatically to ${slotTime} to avoid a conflict.`;
   };
 
-  useEffect(() => { if (user) loadAll(); }, [user, roundId]);
+  const loadAll = useCallback(async () => {
+    if (!user) return;
 
-  const loadAll = async () => {
     setLoading(true);
     setLoadError(null);
     setActionError(null);
@@ -150,7 +150,7 @@ export default function RoundDetailPage() {
       } else {
         setGroups([]);
       }
-    } catch (_error: any) {
+    } catch {
       setGroups([]);
       setLoadError(
         isPt
@@ -162,7 +162,9 @@ export default function RoundDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [db, isEs, isPt, leagueId, roundId, run, user]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   // ── Ações de jogadoras ──────────────────────────────────────
   const assignPlayer = async (groupId: string, position: number, playerId: string) => {
@@ -541,9 +543,11 @@ export default function RoundDetailPage() {
     if (!msg) return;
 
     const ok = await copyText(msg);
-    ok
-      ? toast.success(isPt ? 'Copiado.' : isEs ? 'Copiado.' : 'Copied.')
-      : toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+    if (ok) {
+      toast.success(isPt ? 'Copiado.' : isEs ? 'Copiado.' : 'Copied.');
+    } else {
+      toast.error(isPt ? 'Não foi possível copiar agora.' : isEs ? 'No fue posible copiar ahora.' : 'Could not copy right now.');
+    }
   };
 
   // ── Render ──────────────────────────────────────────────────
@@ -657,6 +661,32 @@ export default function RoundDetailPage() {
 
   const isClosed = round.status === 'closed';
   const physicalCourtsCount = league?.physical_courts_count || 6;
+  const totalGroups = groups.length;
+  const incompleteGroups = groups.filter((group) => group.players.length < 4).length;
+  const attendanceIssues = groups.reduce(
+    (sum, group) => sum + group.players.filter((player) => player.attendance !== 'present').length,
+    0
+  );
+  const pendingScores = groups.reduce(
+    (sum, group) => sum + group.matches.filter((match) => !match.is_recorded).length,
+    0
+  );
+  const missingPhysicalCourts = groups.filter((group) => !group.group.physical_court_number).length;
+  const readyGroups = groups.filter((group) => group.players.length === 4 && group.matches.length > 0).length;
+  const operationStatusText = (() => {
+    if (round.status === 'draft') {
+      if (incompleteGroups > 0) return isPt ? 'Complete as quadras antes de iniciar.' : isEs ? 'Completa las canchas antes de iniciar.' : 'Complete court groups before starting.';
+      return isPt ? 'Estrutura pronta para iniciar.' : isEs ? 'Estructura lista para iniciar.' : 'Structure ready to start.';
+    }
+
+    if (round.status === 'running') {
+      if (attendanceIssues > 0) return isPt ? 'Resolva presenças e suplentes.' : isEs ? 'Resuelve asistencias y suplentes.' : 'Resolve attendance and substitutes.';
+      if (pendingScores > 0) return isPt ? 'Lance placares pendentes.' : isEs ? 'Carga marcadores pendientes.' : 'Enter pending scores.';
+      return isPt ? 'Rodada pronta para fechamento.' : isEs ? 'Jornada lista para cierre.' : 'Round ready to close.';
+    }
+
+    return isPt ? 'Rodada fechada para consulta.' : isEs ? 'Jornada cerrada para consulta.' : 'Round closed for review.';
+  })();
 
 
   return (
@@ -687,7 +717,9 @@ export default function RoundDetailPage() {
         <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3 min-w-0">
-            <button onClick={() => router.push(`/app/leagues/${leagueId}/rounds`)}
+            <button
+              onClick={() => router.push(`/app/leagues/${leagueId}/rounds`)}
+              aria-label={isPt ? 'Voltar para rodadas' : isEs ? 'Volver a jornadas' : 'Back to rounds'}
               className="mt-0.5 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/80 text-neutral-500 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.28)] transition hover:text-neutral-800">
               <ArrowLeft size={18} />
             </button>
@@ -710,31 +742,48 @@ export default function RoundDetailPage() {
         {/* Action buttons */}
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {round.status === 'draft' && (
-            <button onClick={startRound} disabled={isMutating} className="btn-primary inline-flex w-full items-center justify-center gap-1.5 disabled:opacity-60 sm:w-auto">
+            <button
+              onClick={startRound}
+              disabled={isMutating}
+              aria-label={isPt ? 'Iniciar rodada' : isEs ? 'Iniciar jornada' : 'Start round'}
+              className="btn-primary inline-flex w-full items-center justify-center gap-1.5 disabled:opacity-60 sm:w-auto"
+            >
               {startingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Iniciando...' : isEs ? 'Iniciando...' : 'Starting...'}</>
                 : <><PlayCircle size={16} />{isPt ? 'Iniciar' : isEs ? 'Iniciar jornada' : 'Start round'}</>}
             </button>
           )}
           {round.status === 'running' && (
-            <button onClick={closeRound} disabled={isMutating}
+            <button
+              onClick={closeRound}
+              disabled={isMutating}
+              aria-label={isPt ? 'Fechar rodada e atualizar ranking' : isEs ? 'Cerrar jornada y actualizar ranking' : 'Close round and update ranking'}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(15,23,42,0.45)] transition hover:bg-neutral-700 disabled:opacity-60 sm:w-auto">
               {closingRound
                 ? <><span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{isPt ? 'Fechando...' : isEs ? 'Cerrando...' : 'Closing...'}</>
                 : <><Lock size={16} />{isPt ? 'Fechar rodada' : isEs ? 'Cerrar jornada' : 'Close round'}</>}
             </button>
           )}
-          <button onClick={copyWhatsApp} disabled={isMutating}
+          <button
+            onClick={copyWhatsApp}
+            disabled={isMutating}
+            aria-label={isPt ? 'Copiar mensagem da rodada para WhatsApp' : isEs ? 'Copiar mensaje de jornada para WhatsApp' : 'Copy round message for WhatsApp'}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#25D366] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_-24px_rgba(37,211,102,0.45)] transition hover:bg-[#1ebe59] disabled:opacity-60 sm:w-auto">
             <MessageCircle size={16} />
             {isPt ? 'Copiar WhatsApp' : isEs ? 'Copiar WhatsApp' : 'Copy WhatsApp'}
           </button>
-          <button onClick={openWhatsAppRound} disabled={isMutating}
+          <button
+            onClick={openWhatsAppRound}
+            disabled={isMutating}
+            aria-label={isPt ? 'Abrir WhatsApp com mensagem da rodada' : isEs ? 'Abrir WhatsApp con mensaje de jornada' : 'Open WhatsApp with round message'}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 disabled:opacity-60 sm:w-auto">
             <MessageCircle size={16} />
             {isPt ? 'Abrir WhatsApp' : isEs ? 'Abrir WhatsApp' : 'Open WhatsApp'}
           </button>
-          <button onClick={openGoogleCalendarRound} disabled={isMutating}
+          <button
+            onClick={openGoogleCalendarRound}
+            disabled={isMutating}
+            aria-label={isPt ? 'Abrir evento no Google Agenda' : isEs ? 'Abrir evento en Google Calendar' : 'Open Google Calendar event'}
             className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border border-sky-200 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-500/15 disabled:opacity-60 sm:w-auto">
             <CalendarPlus size={16} />
             {isPt ? 'Google Agenda' : isEs ? 'Google Calendar' : 'Google Calendar'}
@@ -750,6 +799,67 @@ export default function RoundDetailPage() {
                 : 'Time slot and physical court can be set per game.'}
           </div>
         )}
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-[1.3fr_1fr]">
+        <div className="rounded-[1.6rem] border border-white/80 bg-white/85 p-4 shadow-[0_20px_44px_-34px_rgba(15,23,42,0.28)]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">
+            {isPt ? 'Próximo foco' : isEs ? 'Próximo foco' : 'Next focus'}
+          </p>
+          <div className="mt-3 flex items-start gap-3">
+            <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${
+              round.status === 'closed'
+                ? 'bg-emerald-500/10 text-emerald-700'
+                : incompleteGroups || attendanceIssues || pendingScores
+                  ? 'bg-amber-500/10 text-amber-700'
+                  : 'bg-teal-500/10 text-teal-700'
+            }`}>
+              {round.status === 'closed' || (!incompleteGroups && !attendanceIssues && !pendingScores) ? <Check size={17} /> : <AlertTriangle size={17} />}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-neutral-900">{operationStatusText}</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-500">
+                {isPt
+                  ? 'Use os indicadores abaixo para atacar o que bloqueia a rodada primeiro.'
+                  : isEs
+                    ? 'Usa los indicadores abajo para atacar primero lo que bloquea la jornada.'
+                    : 'Use the indicators below to handle the blockers first.'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <RoundSignal
+            label={isPt ? 'Quadras prontas' : isEs ? 'Canchas listas' : 'Ready courts'}
+            value={`${readyGroups}/${totalGroups}`}
+            tone={incompleteGroups === 0 ? 'ok' : 'warn'}
+          />
+          <RoundSignal
+            label={isPt ? 'Incompletas' : isEs ? 'Incompletas' : 'Incomplete'}
+            value={incompleteGroups}
+            tone={incompleteGroups === 0 ? 'ok' : 'warn'}
+          />
+          <RoundSignal
+            label={isPt ? 'Presenças' : isEs ? 'Asistencias' : 'Attendance'}
+            value={attendanceIssues}
+            tone={attendanceIssues === 0 ? 'ok' : 'warn'}
+          />
+          <RoundSignal
+            label={isPt ? 'Placares' : isEs ? 'Marcadores' : 'Scores'}
+            value={pendingScores}
+            tone={pendingScores === 0 ? 'ok' : 'warn'}
+          />
+          {missingPhysicalCourts > 0 && (
+            <div className="col-span-2">
+              <RoundSignal
+                label={isPt ? 'Sem quadra física' : isEs ? 'Sin cancha física' : 'No physical court'}
+                value={missingPhysicalCourts}
+                tone="warn"
+              />
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Court cards */}
@@ -787,7 +897,6 @@ export default function RoundDetailPage() {
           <CourtCard
             key={g.group.id}
             g={g}
-            isClosed={isClosed}
             physicalCourtsCount={physicalCourtsCount}
             allPlayers={allPlayers}
             allGroups={groups}
@@ -816,8 +925,8 @@ export default function RoundDetailPage() {
 // ─────────────────────────────────────────────────────────────
 // COURT CARD
 // ─────────────────────────────────────────────────────────────
-function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSetSubstituteName, onCopyConfirmationLink, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
-  g: GroupWithDetails; isClosed: boolean; physicalCourtsCount: number;
+function CourtCard({ g, physicalCourtsCount, allPlayers, allGroups, slots, rules, expandedGroup, disabled, locale, onExpand, onAssignPlayer, onRemovePlayer, onToggleAttendance, onSetSubstituteName, onCopyConfirmationLink, onSaveScore, onSetPhysical, onSetSlot, onOpenWhatsApp }: {
+  g: GroupWithDetails; physicalCourtsCount: number;
   allPlayers: Player[]; allGroups: GroupWithDetails[]; slots: LeagueTimeSlot[]; rules: Rules | null;
   expandedGroup: string | null; disabled: boolean; locale: string;
   onExpand: (id: string) => void;
@@ -911,6 +1020,7 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
           <div className="flex self-start sm:self-auto items-center gap-2">
             <button
               onClick={onOpenWhatsApp}
+              aria-label={isPt ? `Abrir WhatsApp da quadra nível ${levelNum}` : isEs ? `Abrir WhatsApp de cancha nivel ${levelNum}` : `Open WhatsApp for level court ${levelNum}`}
               className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-500/10 px-2.5 py-2 text-emerald-700 transition hover:bg-emerald-500/15"
               title={isPt ? 'Abrir WhatsApp desta quadra' : isEs ? 'Abrir WhatsApp de esta cancha' : 'Open WhatsApp for this court'}
             >
@@ -939,7 +1049,9 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                     <div className="truncate text-sm font-bold text-neutral-800">{cp.playerData?.full_name || '?'}</div>
                     {!disabled ? (
                       <div className="mt-2 flex flex-col gap-1.5">
-                        <button onClick={() => onToggleAttendance(cp.id, cp.attendance)}
+                        <button
+                          onClick={() => onToggleAttendance(cp.id, cp.attendance)}
+                          aria-label={isPt ? `Alternar presença de ${cp.playerData?.full_name || 'jogadora'}` : isEs ? `Cambiar asistencia de ${cp.playerData?.full_name || 'jugadora'}` : `Toggle attendance for ${cp.playerData?.full_name || 'player'}`}
                           className={`w-full rounded-xl py-1.5 text-xs font-semibold ${ATTENDANCE_BTN[cp.attendance] || ''}`}>
                           {attendanceLabel(cp.attendance)}
                         </button>
@@ -958,13 +1070,16 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
                         )}
                         <button
                           onClick={() => onCopyConfirmationLink(cp.id)}
+                          aria-label={isPt ? `Copiar link de presença de ${cp.playerData?.full_name || 'jogadora'}` : isEs ? `Copiar enlace de asistencia de ${cp.playerData?.full_name || 'jugadora'}` : `Copy attendance link for ${cp.playerData?.full_name || 'player'}`}
                           className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 bg-sky-500/10 px-2 py-1.5 text-[10px] font-semibold text-sky-700 transition hover:bg-sky-500/15"
                           title={isPt ? 'Copiar link de confirmacao' : isEs ? 'Copiar enlace de confirmacion' : 'Copy confirmation link'}
                         >
                           <Link2 size={10} />
                           {isPt ? 'link presenca' : isEs ? 'link asistencia' : 'attendance link'}
                         </button>
-                        <button onClick={() => onRemovePlayer(cp.id)}
+                        <button
+                          onClick={() => onRemovePlayer(cp.id)}
+                          aria-label={isPt ? `Remover ${cp.playerData?.full_name || 'jogadora'} da quadra` : isEs ? `Quitar ${cp.playerData?.full_name || 'jugadora'} de la cancha` : `Remove ${cp.playerData?.full_name || 'player'} from court`}
                           className="text-[10px] text-neutral-400 hover:text-red-500 flex items-center justify-center gap-0.5">
                           <XCircle size={10} />
                           {isPt ? 'remover' : isEs ? 'quitar' : 'remove'}
@@ -1010,7 +1125,10 @@ function CourtCard({ g, isClosed, physicalCourtsCount, allPlayers, allGroups, sl
       {/* Partidas */}
       {g.matches.length > 0 && (
         <div className="border-t border-neutral-100">
-          <button onClick={() => onExpand(g.group.id)}
+          <button
+            onClick={() => onExpand(g.group.id)}
+            aria-expanded={isExpanded}
+            aria-label={isPt ? `Abrir resultados e pontos da quadra nível ${levelNum}` : isEs ? `Abrir resultados y puntos de cancha nivel ${levelNum}` : `Open results and points for level court ${levelNum}`}
             className="flex w-full items-center justify-between bg-neutral-50 px-5 py-4 transition hover:bg-neutral-100">
             <div className="flex items-center gap-2">
               <Trophy size={15} className="text-teal-600" />
@@ -1144,7 +1262,9 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
         </div>
         {/* Save btn */}
         {!disabled && s1 !== '' && s2 !== '' && (
-          <button onClick={handleSave}
+          <button
+            onClick={handleSave}
+            aria-label={isPt ? `Salvar placar da partida ${match.match_number}` : isEs ? `Guardar marcador del partido ${match.match_number}` : `Save score for match ${match.match_number}`}
             className={`flex w-full flex-shrink-0 items-center justify-center rounded-2xl p-3 transition sm:w-auto ${
               recorded
                 ? 'bg-emerald-200 text-emerald-700 hover:bg-emerald-300'
@@ -1164,6 +1284,19 @@ function MatchScoreRow({ match, team1, team2, onSave, disabled, locale }: {
 // ─────────────────────────────────────────────────────────────
 // STATUS BADGE
 // ─────────────────────────────────────────────────────────────
+function RoundSignal({ label, value, tone }: { label: string; value: number | string; tone: 'ok' | 'warn' }) {
+  const toneClass = tone === 'ok'
+    ? 'border-emerald-200/70 bg-emerald-50 text-emerald-800'
+    : 'border-amber-200/70 bg-amber-50 text-amber-800';
+
+  return (
+    <div className={`rounded-2xl border px-3 py-3 ${toneClass}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-70">{label}</p>
+      <p className="mt-1 text-xl font-black tracking-[-0.03em]">{value}</p>
+    </div>
+  );
+}
+
 function StatusBadge({ status, locale }: { status: string; locale: string }) {
   const isEs = locale === 'es'; const isPt = locale === 'pt';
   const label = status === 'running'

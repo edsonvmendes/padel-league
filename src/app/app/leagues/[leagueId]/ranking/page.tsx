@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
@@ -46,11 +46,9 @@ export default function LeagueRankingPage() {
   const [compareRoundId, setCompareRoundId] = useState<'prev' | 'none' | string>('prev');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (user) load();
-  }, [user, leagueId]);
+  const load = useCallback(async () => {
+    if (!user) return;
 
-  const load = async () => {
     setLoading(true);
 
     const [
@@ -77,7 +75,11 @@ export default function LeagueRankingPage() {
     setRoundPoints((pointsData as RoundPoints[]) || []);
     setRules(((rulesData as Rules[]) || [])[0] || null);
     setLoading(false);
-  };
+  }, [db, leagueId, run, user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const rankingData = useMemo((): { snapshot: RankingSnapshot; comparedRound: Round | null } => {
     const roundsOrdered = [...closedRounds].sort((a, b) => a.number - b.number);

@@ -218,6 +218,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={cycleLocale}
+                  aria-label={`Change language. Current language: ${locale.toUpperCase()}`}
                   className="rounded-full border border-black/5 bg-white/78 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500"
                 >
                   {locale.toUpperCase()}
@@ -236,31 +237,39 @@ export default function LoginPage() {
 
             <form onSubmit={handleLogin} className="space-y-5">
               {error && (
-                <div className="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div role="alert" className="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {error}
                 </div>
               )}
 
               <div>
-                <label className="label-field">{copy.email}</label>
+                <label htmlFor="login-email" className="label-field">{copy.email}</label>
                 <input
+                  id="login-email"
+                  name="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="input-field"
                   placeholder={copy.emailPlaceholder}
+                  autoComplete="email"
+                  aria-invalid={Boolean(error)}
                   required
                 />
               </div>
 
               <div>
-                <label className="label-field">{copy.password}</label>
+                <label htmlFor="login-password" className="label-field">{copy.password}</label>
                 <input
+                  id="login-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="input-field"
                   placeholder={copy.passwordPlaceholder}
+                  autoComplete="current-password"
+                  aria-invalid={Boolean(error)}
                   required
                 />
               </div>

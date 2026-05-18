@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb, validate } from '@/hooks/useDb';
@@ -29,11 +29,7 @@ export default function LeagueSettingsPage() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [rules, setRules] = useState<Rules | null>(null);
 
-  useEffect(() => {
-    loadAll();
-  }, [leagueId]);
-
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     const [{ data: leagueData }, { data: slotData }, { data: courtData }, { data: roundData }, { data: rulesData }] = await Promise.all([
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
       run(() => db.from('league_time_slots').select('*').eq('league_id', leagueId).order('sort_order')),
@@ -48,7 +44,11 @@ export default function LeagueSettingsPage() {
     setRounds(roundData || []);
     setRules(rulesData);
     setLoading(false);
-  };
+  }, [db, leagueId, run]);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'general', label: isPt ? 'Geral' : isEs ? 'General' : 'General', icon: <Settings size={15} /> },
@@ -85,6 +85,7 @@ export default function LeagueSettingsPage() {
         <div className="relative flex items-start gap-4">
           <button
             onClick={() => router.back()}
+            aria-label={isPt ? 'Voltar' : isEs ? 'Volver' : 'Go back'}
             className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-white/80 text-neutral-500 shadow-[0_18px_34px_-28px_rgba(15,23,42,0.28)] transition hover:text-neutral-800"
           >
             <ChevronLeft size={20} />
@@ -109,6 +110,7 @@ export default function LeagueSettingsPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              aria-pressed={activeTab === tab.id}
               className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 rounded-2xl text-sm font-semibold whitespace-nowrap transition-all ${
                 activeTab === tab.id ? 'bg-white text-neutral-900 shadow-[0_14px_28px_-20px_rgba(15,23,42,0.3)]' : 'text-neutral-500 hover:text-neutral-700'
               }`}
@@ -385,9 +387,14 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
             </div>
             <span className="flex-1 text-sm font-bold text-neutral-900">{slot.slot_time}</span>
             <div className="flex gap-1">
-              {index > 0 && <ArrowBtn onClick={() => move(index, -1)} dir="up" />}
-              {index < slots.length - 1 && <ArrowBtn onClick={() => move(index, 1)} dir="down" />}
-              <button onClick={() => handleDelete(slot)} className="rounded-2xl p-2 text-neutral-400 transition hover:bg-red-50 hover:text-red-500">
+              {index > 0 && <ArrowBtn onClick={() => move(index, -1)} dir="up" label={isPt ? `Mover ${slot.slot_time} para cima` : isEs ? `Mover ${slot.slot_time} hacia arriba` : `Move ${slot.slot_time} up`} />}
+              {index < slots.length - 1 && <ArrowBtn onClick={() => move(index, 1)} dir="down" label={isPt ? `Mover ${slot.slot_time} para baixo` : isEs ? `Mover ${slot.slot_time} hacia abajo` : `Move ${slot.slot_time} down`} />}
+              <button
+                onClick={() => handleDelete(slot)}
+                aria-label={isPt ? `Remover horário ${slot.slot_time}` : isEs ? `Eliminar horario ${slot.slot_time}` : `Remove slot ${slot.slot_time}`}
+                title={isPt ? 'Remover horário' : isEs ? 'Eliminar horario' : 'Remove slot'}
+                className="rounded-2xl p-2 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
+              >
                 <Trash2 size={14} />
               </button>
             </div>
@@ -481,7 +488,12 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
           {courts.length} {isPt ? 'quadras' : isEs ? 'canchas' : 'courts'} - {isPt ? 'configurado para' : isEs ? 'configurado para' : 'configured for'} {league.max_courts_per_slot}
         </p>
         {!inSync && (
-          <button onClick={syncCourts} disabled={syncing} className="inline-flex items-center justify-center rounded-2xl bg-teal-500/10 px-4 py-2 text-xs font-semibold text-teal-700 ring-1 ring-teal-500/12 transition hover:bg-teal-500/15">
+          <button
+            onClick={syncCourts}
+            disabled={syncing}
+            aria-label={isPt ? `Sincronizar para ${league.max_courts_per_slot} quadras` : isEs ? `Sincronizar a ${league.max_courts_per_slot} canchas` : `Sync to ${league.max_courts_per_slot} courts`}
+            className="inline-flex items-center justify-center rounded-2xl bg-teal-500/10 px-4 py-2 text-xs font-semibold text-teal-700 ring-1 ring-teal-500/12 transition hover:bg-teal-500/15"
+          >
             {syncing ? '...' : `${isPt ? 'Sincronizar' : isEs ? 'Sincronizar' : 'Sync'} -> ${league.max_courts_per_slot}`}
           </button>
         )}
@@ -498,7 +510,12 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
                 {isPt ? `Nivel ${court.court_number}` : isEs ? `Nivel ${court.court_number}` : `Level ${court.court_number}`}
               </span>
             </div>
-            <button onClick={() => handleDelete(court)} className="rounded-2xl p-2 text-neutral-400 transition hover:bg-red-50 hover:text-red-500">
+            <button
+              onClick={() => handleDelete(court)}
+              aria-label={isPt ? `Remover quadra ${court.court_number}` : isEs ? `Eliminar cancha ${court.court_number}` : `Remove court ${court.court_number}`}
+              title={isPt ? 'Remover quadra' : isEs ? 'Eliminar cancha' : 'Remove court'}
+              className="rounded-2xl p-2 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
+            >
               <Trash2 size={14} />
             </button>
           </div>
@@ -806,6 +823,8 @@ function RuleToggle({ label, hint, value, onChange }: { label: string; hint: str
       </div>
       <button
         onClick={() => onChange(!value)}
+        aria-pressed={value}
+        aria-label={label}
         className={`h-6 w-12 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-teal-500' : 'bg-neutral-300'}`}
       >
         <div className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-6' : 'translate-x-0.5'}`} />
@@ -835,10 +854,12 @@ function SaveButton({ saving, onClick, locale, label }: { saving: boolean; onCli
   );
 }
 
-function ArrowBtn({ onClick, dir }: { onClick: () => void; dir: 'up' | 'down' }) {
+function ArrowBtn({ onClick, dir, label }: { onClick: () => void; dir: 'up' | 'down'; label: string }) {
   return (
     <button
       onClick={onClick}
+      aria-label={label}
+      title={label}
       className="flex h-9 w-9 items-center justify-center rounded-2xl bg-neutral-900/5 text-sm font-bold text-neutral-500 transition hover:bg-neutral-900/8 hover:text-neutral-800"
     >
       {dir === 'up' ? '↑' : '↓'}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
@@ -38,10 +38,6 @@ export default function LeaguesPage() {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    if (user) load();
-  }, [user]);
-
   const leagueTemplates = {
     balanced: {
       rounds_count: 12,
@@ -78,7 +74,9 @@ export default function LeaguesPage() {
     };
   }>;
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    if (!user) return;
+
     const { data: ls } = await run(() => db.from('leagues').select('*').order('created_at', { ascending: false }));
     if (!ls) {
       setLoading(false);
@@ -100,7 +98,11 @@ export default function LeaguesPage() {
 
     setLeagues(enriched);
     setLoading(false);
-  };
+  }, [db, run, user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const weekdayLabel = (weekday: string) => (isPt ? WEEKDAY_PT[weekday] || weekday : isEs ? WEEKDAY_ES[weekday] || weekday : weekday);
 
@@ -437,19 +439,13 @@ export default function LeaguesPage() {
           {leagues.map((league) => (
             <div
               key={league.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push(`/app/leagues/${league.id}/players`)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  router.push(`/app/leagues/${league.id}/players`);
-                }
-              }}
-              className="group w-full cursor-pointer rounded-[1.75rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-5 text-left shadow-[0_22px_48px_-34px_rgba(15,23,42,0.34)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.28)] focus:outline-none focus:ring-2 focus:ring-teal-400/70"
+              className="group w-full rounded-[1.75rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-5 text-left shadow-[0_22px_48px_-34px_rgba(15,23,42,0.34)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.28)]"
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex min-w-0 items-center gap-4">
+                <button
+                  onClick={() => router.push(`/app/leagues/${league.id}/players`)}
+                  className="flex min-w-0 flex-1 items-center gap-4 rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-teal-400/70"
+                >
                   <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 via-emerald-500 to-cyan-500 text-white shadow-[0_18px_36px_-22px_rgba(13,148,136,0.75)]">
                     <Trophy size={20} />
                   </div>
@@ -479,7 +475,7 @@ export default function LeaguesPage() {
                       </span>
                     </div>
                   </div>
-                </div>
+                </button>
 
                 <div className="flex w-full items-center justify-between gap-3 md:w-auto md:justify-end">
                   <div className="text-right">
@@ -497,6 +493,7 @@ export default function LeaguesPage() {
                         event.stopPropagation();
                         duplicateLeague(league);
                       }}
+                      aria-label={isPt ? `Duplicar ${league.name}` : isEs ? `Duplicar ${league.name}` : `Duplicate ${league.name}`}
                       className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-teal-50 hover:text-teal-600"
                       title={isPt ? 'Duplicar liga' : isEs ? 'Duplicar liga' : 'Duplicate league'}
                     >
@@ -507,7 +504,9 @@ export default function LeaguesPage() {
                         event.stopPropagation();
                         router.push(`/app/leagues/${league.id}/settings`);
                       }}
+                      aria-label={isPt ? `Editar configurações de ${league.name}` : isEs ? `Editar configuración de ${league.name}` : `Edit settings for ${league.name}`}
                       className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-neutral-900/5 hover:text-neutral-700"
+                      title={isPt ? 'Editar configurações' : isEs ? 'Editar configuración' : 'Edit settings'}
                     >
                       <Pencil size={15} />
                     </button>
@@ -516,7 +515,9 @@ export default function LeaguesPage() {
                         event.stopPropagation();
                         deleteLeague(league);
                       }}
+                      aria-label={isPt ? `Excluir ${league.name}` : isEs ? `Eliminar ${league.name}` : `Delete ${league.name}`}
                       className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
+                      title={isPt ? 'Excluir liga' : isEs ? 'Eliminar liga' : 'Delete league'}
                     >
                       <X size={15} />
                     </button>

@@ -4,6 +4,6 @@ import { useRouter } from 'next/navigation';
 
 export default function RootPage() {
   const router = useRouter();
-  useEffect(() => { router.replace('/app'); }, []);
+  useEffect(() => { router.replace('/app'); }, [router]);
   return null;
 }

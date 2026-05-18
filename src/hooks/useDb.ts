@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { createClient } from '@/lib/supabase-browser';
 import { useToast } from '@/components/ToastProvider';
 
-type DbResult<T> = { data: T | null; error: any };
+type DbResult = { data: any; error: any };
 
 /**
  * Wrapper do supabase com error handling automático via toast.
@@ -20,10 +20,10 @@ export function useDb() {
    * @param queryFn  Função que retorna a query (sem await)
    * @param errorMsg Mensagem customizada de erro (opcional)
    */
-  const run = useCallback(async <T>(
-    queryFn: () => PromiseLike<DbResult<T>>,
+  const run = useCallback(async <T extends DbResult>(
+    queryFn: () => PromiseLike<T>,
     errorMsg?: string
-  ): Promise<DbResult<T>> => {
+  ): Promise<T> => {
     try {
       const result = await queryFn();
       if (result.error) {
@@ -34,7 +34,7 @@ export function useDb() {
     } catch (e: any) {
       const msg = errorMsg || e?.message || 'Unexpected error';
       toast.error(msg);
-      return { data: null, error: e };
+      return { data: null, error: e } as T;
     }
   }, [toast]);
 
@@ -42,10 +42,10 @@ export function useDb() {
    * Executa uma query Supabase e interrompe o fluxo ao primeiro erro.
    * Use em operações críticas para evitar continuar com estado parcial.
    */
-  const runOrThrow = useCallback(async <T>(
-    queryFn: () => PromiseLike<DbResult<T>>,
+  const runOrThrow = useCallback(async <T extends DbResult>(
+    queryFn: () => PromiseLike<T>,
     errorMsg?: string
-  ): Promise<T | null> => {
+  ): Promise<T['data'] | null> => {
     const result = await run(queryFn, errorMsg);
     if (result.error) {
       if (result.error instanceof Error) throw result.error;

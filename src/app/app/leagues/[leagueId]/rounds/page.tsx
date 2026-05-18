@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useDb } from '@/hooks/useDb';
@@ -9,7 +9,7 @@ import { useConfirm } from '@/components/ConfirmProvider';
 import { SkeletonList } from '@/components/Skeleton';
 import { Round, League, LeagueTimeSlot, Court, Rules } from '@/types/database';
 import { t } from '@/lib/i18n';
-import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, Trophy, MapPin, MessageCircle, Send } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle, MapPin, MessageCircle, Send } from 'lucide-react';
 
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
@@ -33,11 +33,9 @@ export default function RoundsPage() {
   const [physicalCourtByCourt, setPhysicalCourtByCourt] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    if (user) loadAll();
-  }, [user, leagueId]);
+  const loadAll = useCallback(async () => {
+    if (!user) return;
 
-  const loadAll = async () => {
     const [{ data: leagueData }, { data: roundData }, { data: slotData }, { data: courtData }, { data: rulesData }] = await Promise.all([
       run(() => db.from('leagues').select('*').eq('id', leagueId).single()),
       run(() => db.from('rounds').select('*').eq('league_id', leagueId).order('number')),
@@ -52,7 +50,11 @@ export default function RoundsPage() {
     setCourts(courtData || []);
     setRules(rulesData || null);
     setLoading(false);
-  };
+  }, [db, leagueId, run, user]);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
   const openModal = () => {
     if (league?.weekday) {
@@ -213,6 +215,18 @@ export default function RoundsPage() {
     return null;
   };
 
+  const nextActionLabel = (status: string) => {
+    if (status === 'draft') return isPt ? 'Preparar e iniciar' : isEs ? 'Preparar e iniciar' : 'Prepare and start';
+    if (status === 'running') return isPt ? 'Continuar operação' : isEs ? 'Continuar operación' : 'Continue operation';
+    return isPt ? 'Revisar histórico' : isEs ? 'Revisar historial' : 'Review history';
+  };
+
+  const nextActionClass = (status: string) => {
+    if (status === 'running') return 'bg-sky-500/10 text-sky-700 ring-sky-500/15';
+    if (status === 'closed') return 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/15';
+    return 'bg-amber-500/10 text-amber-700 ring-amber-500/15';
+  };
+
   const closedCount = rounds.filter((round) => round.status === 'closed').length;
   const runningCount = rounds.filter((round) => round.status === 'running').length;
   const draftCount = rounds.filter((round) => round.status === 'draft').length;
@@ -309,6 +323,7 @@ export default function RoundsPage() {
           <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
             <button
               onClick={openWhatsAppSummary}
+              aria-label={isPt ? 'Abrir resumo das rodadas no WhatsApp' : isEs ? 'Abrir resumen de jornadas en WhatsApp' : 'Open rounds summary in WhatsApp'}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-500/15 lg:w-auto"
             >
               <Send size={16} />
@@ -316,6 +331,7 @@ export default function RoundsPage() {
             </button>
             <button
               onClick={copyWhatsAppSummary}
+              aria-label={isPt ? 'Copiar resumo das rodadas para WhatsApp' : isEs ? 'Copiar resumen de jornadas para WhatsApp' : 'Copy rounds summary for WhatsApp'}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-neutral-200 bg-white/80 px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-white lg:w-auto"
             >
               <MessageCircle size={16} />
@@ -384,19 +400,13 @@ export default function RoundsPage() {
           {rounds.map((round) => (
             <div
               key={round.id}
-              onClick={() => router.push(`/app/leagues/${leagueId}/rounds/${round.id}`)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  router.push(`/app/leagues/${leagueId}/rounds/${round.id}`);
-                }
-              }}
-              role="button"
-              tabIndex={0}
               className="group w-full rounded-[1.7rem] border border-white/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-4 text-left shadow-[0_22px_48px_-34px_rgba(15,23,42,0.32)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_26px_56px_-30px_rgba(13,148,136,0.28)] sm:p-5"
             >
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex min-w-0 items-center gap-4">
+                <button
+                  onClick={() => router.push(`/app/leagues/${leagueId}/rounds/${round.id}`)}
+                  className="flex min-w-0 flex-1 items-center gap-4 rounded-2xl text-left focus:outline-none focus:ring-2 focus:ring-teal-400/70"
+                >
                   <div className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl text-lg font-black shadow-[0_18px_36px_-24px_rgba(15,23,42,0.28)] ${
                     round.status === 'running'
                       ? 'bg-sky-600 text-white'
@@ -418,8 +428,13 @@ export default function RoundsPage() {
                       </span>
                     </div>
                     <p className="mt-1 text-xs font-medium text-neutral-500">{fmtDate(round.round_date)}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${nextActionClass(round.status)}`}>
+                        {nextActionLabel(round.status)}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                </button>
 
                 <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-end">
                   {round.status !== 'closed' && (
@@ -428,6 +443,8 @@ export default function RoundsPage() {
                         event.stopPropagation();
                         handleDeleteRound(round);
                       }}
+                      aria-label={isPt ? `Excluir rodada ${round.number}` : isEs ? `Eliminar jornada ${round.number}` : `Delete round ${round.number}`}
+                      title={isPt ? 'Excluir rodada' : isEs ? 'Eliminar jornada' : 'Delete round'}
                       className="rounded-2xl p-2.5 text-neutral-400 transition hover:bg-red-50 hover:text-red-500"
                     >
                       <X size={15} />
@@ -472,7 +489,11 @@ export default function RoundsPage() {
                   {rounds.length > 0 && <span className="ml-2 text-sm font-normal text-neutral-400">#{Math.max(...rounds.map((round) => round.number)) + 1}</span>}
                 </h2>
               </div>
-              <button onClick={() => setShowModal(false)} className="rounded-2xl p-2 text-neutral-400 transition hover:bg-neutral-900/5 hover:text-neutral-700">
+              <button
+                onClick={() => setShowModal(false)}
+                aria-label={isPt ? 'Fechar modal' : isEs ? 'Cerrar modal' : 'Close modal'}
+                className="rounded-2xl p-2 text-neutral-400 transition hover:bg-neutral-900/5 hover:text-neutral-700"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -501,6 +522,8 @@ export default function RoundsPage() {
                       <button
                         key={court.id}
                         onClick={() => toggleCourt(court.id)}
+                        aria-pressed={selectedCourts.has(court.id)}
+                        aria-label={isPt ? `Selecionar quadra nível ${court.court_number}` : isEs ? `Seleccionar cancha nivel ${court.court_number}` : `Select level court ${court.court_number}`}
                         className={`flex-1 rounded-2xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none ${
                           selectedCourts.has(court.id) ? 'bg-emerald-600 text-white shadow-[0_14px_28px_-18px_rgba(5,150,105,0.55)]' : 'bg-neutral-900/5 text-neutral-500 hover:bg-neutral-900/8'
                         }`}
