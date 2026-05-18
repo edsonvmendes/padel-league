@@ -8,6 +8,7 @@ import { ProductSignature } from '@/components/ProductSignature';
 
 const LOGIN_BG_VIDEO = '/login-bg.mp4';
 const LOCALE_KEY = 'padel_locale';
+const LOGIN_TIMEOUT_MS = 15000;
 
 type LoginLocale = 'en' | 'es' | 'pt';
 
@@ -80,6 +81,15 @@ const COPY: Record<LoginLocale, Record<string, string>> = {
   },
 };
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error('login-timeout')), timeoutMs);
+    }),
+  ]);
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -150,15 +160,24 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    try {
+      const supabase = createClient();
+      const loginResult = await withTimeout(
+        supabase.auth.signInWithPassword({ email, password }),
+        LOGIN_TIMEOUT_MS
+      ) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+      const { error } = loginResult;
 
-    if (error) {
-      setError(normalizeAuthError(error.message));
+      if (error) {
+        setError(normalizeAuthError(error.message));
+        setLoading(false);
+      } else {
+        router.replace('/app');
+        router.refresh();
+      }
+    } catch {
+      setError(normalizeAuthError('login-timeout'));
       setLoading(false);
-    } else {
-      router.push('/app');
-      router.refresh();
     }
   };
 
