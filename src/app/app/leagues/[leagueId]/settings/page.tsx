@@ -125,6 +125,7 @@ export default function LeagueSettingsPage() {
       {activeTab === 'general' && (
         <GeneralTab
           league={league}
+          rounds={rounds}
           locale={locale}
           onSaved={(updated) => {
             setLeague(updated);
@@ -172,8 +173,9 @@ export default function LeagueSettingsPage() {
   );
 }
 
-function GeneralTab({ league, locale, onSaved }: { league: League; locale: string; onSaved: (l: League) => void }) {
-  const { db, runOrThrow } = useDb();
+function GeneralTab({ league, rounds, locale, onSaved }: { league: League; rounds: Round[]; locale: string; onSaved: (l: League) => void }) {
+  const { db, runOrThrow, auditOperation } = useDb();
+  const confirm = useConfirm();
   const isEs = locale === 'es';
   const isPt = locale === 'pt';
 
@@ -211,6 +213,21 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
       return;
     }
 
+    if (rounds.length > 0) {
+      const ok = await confirm({
+        title: isPt ? 'Salvar ajustes da liga?' : isEs ? 'Guardar ajustes de la liga?' : 'Save league settings?',
+        message: isPt
+          ? 'Esta liga ja tem rodadas criadas. Revise se capacidade, dia e nome continuam coerentes com a operacao.'
+          : isEs
+            ? 'Esta liga ya tiene jornadas creadas. Revisa que capacidad, dia y nombre sigan coherentes con la operacion.'
+            : 'This league already has rounds. Make sure capacity, weekday, and name still match the operation.',
+        confirmLabel: isPt ? 'Salvar' : isEs ? 'Guardar' : 'Save',
+        cancelLabel: isPt ? 'Cancelar' : isEs ? 'Cancelar' : 'Cancel',
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
+
     setSaving(true);
 
     try {
@@ -219,7 +236,10 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
         isPt ? 'Erro ao salvar' : isEs ? 'Error al guardar' : 'Save failed'
       );
 
-      if (data) onSaved(data);
+      if (data) {
+        await auditOperation('league.settings_updated', { league_id: league.id, fields: Object.keys(form) }, league.id);
+        onSaved(data);
+      }
     } finally {
       setSaving(false);
     }
@@ -318,7 +338,7 @@ function GeneralTab({ league, locale, onSaved }: { league: League; locale: strin
 }
 
 function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; slots: LeagueTimeSlot[]; locale: string; onChanged: () => void }) {
-  const { db, runOrThrow } = useDb();
+  const { db, runOrThrow, auditOperation } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const isEs = locale === 'es';
@@ -341,6 +361,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
 
     try {
       await runOrThrow(() => db.from('league_time_slots').insert({ league_id: leagueId, slot_time: newTime, sort_order: slots.length }));
+      await auditOperation('slot.created', { league_id: leagueId, slot_time: newTime }, leagueId);
       setNewTime('');
       toast.success(isPt ? 'Horário adicionado.' : isEs ? 'Horario agregado.' : 'Slot added.');
       onChanged();
@@ -361,6 +382,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
     if (!ok) return;
 
     await runOrThrow(() => db.from('league_time_slots').delete().eq('id', slot.id));
+    await auditOperation('slot.deleted', { league_id: leagueId, slot_id: slot.id, slot_time: slot.slot_time }, leagueId);
     toast.success(isPt ? 'Horário removido.' : isEs ? 'Horario eliminado.' : 'Slot removed.');
     onChanged();
   };
@@ -370,6 +392,7 @@ function SlotsTab({ leagueId, slots, locale, onChanged }: { leagueId: string; sl
     const targetIndex = index + dir;
     [reordered[index], reordered[targetIndex]] = [reordered[targetIndex], reordered[index]];
     await Promise.all(reordered.map((slot, nextIndex) => runOrThrow(() => db.from('league_time_slots').update({ sort_order: nextIndex }).eq('id', slot.id))));
+    await auditOperation('slot.reordered', { league_id: leagueId, slot_id: slots[index].id, direction: dir }, leagueId);
     onChanged();
   };
 
@@ -426,7 +449,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
   locale: string;
   onChanged: () => void;
 }) {
-  const { db, runOrThrow } = useDb();
+  const { db, runOrThrow, auditOperation } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const isEs = locale === 'es';
@@ -452,6 +475,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
       }
 
       toast.success(isPt ? 'Quadras sincronizadas.' : isEs ? 'Canchas sincronizadas.' : 'Courts synced.');
+      await auditOperation('courts.synced', { league_id: leagueId, from: courts.length, to: target }, leagueId);
       onChanged();
     } finally {
       setSyncing(false);
@@ -461,6 +485,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
   const handleAdd = async () => {
     const next = courts.length > 0 ? Math.max(...courts.map((court) => court.court_number)) + 1 : 1;
     await runOrThrow(() => db.from('courts').insert({ league_id: leagueId, court_number: next }));
+    await auditOperation('court.created', { league_id: leagueId, court_number: next }, leagueId);
     toast.success(isPt ? 'Quadra adicionada.' : isEs ? 'Cancha agregada.' : 'Court added.');
     onChanged();
   };
@@ -477,6 +502,7 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
     if (!ok) return;
 
     await runOrThrow(() => db.from('courts').delete().eq('id', court.id));
+    await auditOperation('court.deleted', { league_id: leagueId, court_id: court.id, court_number: court.court_number }, leagueId);
     toast.success(isPt ? 'Quadra removida.' : isEs ? 'Cancha eliminada.' : 'Court removed.');
     onChanged();
   };
@@ -547,8 +573,9 @@ function CourtsTab({ leagueId, courts, league, locale, onChanged }: {
 }
 
 function RulesTab({ league, rounds, rules, locale, onSaved }: { league: League; rounds: Round[]; rules: Rules; locale: string; onSaved: () => void }) {
-  const { db, runOrThrow } = useDb();
+  const { db, runOrThrow, auditOperation } = useDb();
   const toast = useToast();
+  const confirm = useConfirm();
   const isEs = locale === 'es';
   const isPt = locale === 'pt';
   const [form, setForm] = useState<Rules>(rules);
@@ -620,6 +647,21 @@ function RulesTab({ league, rounds, rules, locale, onSaved }: { league: League; 
       return;
     }
 
+    if (runningCount > 0 || closedCount > 0) {
+      const ok = await confirm({
+        title: isPt ? 'Salvar regras?' : isEs ? 'Guardar reglas?' : 'Save rules?',
+        message: isPt
+          ? 'Alterar regras com rodadas em andamento ou fechadas pode mudar a leitura operacional das proximas jornadas.'
+          : isEs
+            ? 'Cambiar reglas con jornadas en curso o cerradas puede cambiar la lectura operativa de las proximas jornadas.'
+            : 'Changing rules while rounds are running or closed can affect how upcoming rounds are interpreted.',
+        confirmLabel: isPt ? 'Salvar regras' : isEs ? 'Guardar reglas' : 'Save rules',
+        cancelLabel: isPt ? 'Cancelar' : isEs ? 'Cancelar' : 'Cancel',
+        variant: 'warning',
+      });
+      if (!ok) return;
+    }
+
     setSaving(true);
 
     try {
@@ -628,6 +670,12 @@ function RulesTab({ league, rounds, rules, locale, onSaved }: { league: League; 
         () => db.from('rules').update({ ...rest, updated_at: new Date().toISOString() }).eq('id', id),
         isPt ? 'Erro ao salvar regras' : isEs ? 'Error al guardar reglas' : 'Failed to save rules'
       );
+      await auditOperation('rules.updated', {
+        league_id: league.id,
+        rule_id: id,
+        running_rounds: runningCount,
+        closed_rounds: closedCount,
+      }, league.id);
       onSaved();
     } finally {
       setSaving(false);

@@ -25,7 +25,7 @@ interface GroupWithDetails {
 export default function RoundDetailPage() {
   const { leagueId, roundId } = useParams<{ leagueId: string; roundId: string }>();
   const { user, locale } = useAuth();
-  const { db, run, runOrThrow } = useDb();
+  const { db, run, runOrThrow, auditOperation } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -209,7 +209,9 @@ export default function RoundDetailPage() {
     setActionError(null);
     try {
       const cycle = { present: 'absent', absent: 'substitute', substitute: 'present' } as Record<string, string>;
-      await runOrThrow(() => db.from('round_court_players').update({ attendance: cycle[current] || 'present' }).eq('id', cpId));
+      const nextAttendance = cycle[current] || 'present';
+      await runOrThrow(() => db.from('round_court_players').update({ attendance: nextAttendance }).eq('id', cpId));
+      await auditOperation('attendance.changed', { league_id: leagueId, round_id: roundId, round_court_player_id: cpId, from: current, to: nextAttendance }, leagueId, roundId);
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(
@@ -225,6 +227,7 @@ export default function RoundDetailPage() {
     setActionError(null);
     try {
       await runOrThrow(() => db.from('matches').update({ score_team1: score1, score_team2: score2, is_recorded: false }).eq('id', matchId));
+      await auditOperation('score.saved_draft', { league_id: leagueId, round_id: roundId, match_id: matchId, score_team1: score1, score_team2: score2 }, leagueId, roundId);
       toast.success(
         isPt
           ? 'Placar salvo como rascunho. Ele sera confirmado ao fechar a rodada.'
@@ -249,6 +252,7 @@ export default function RoundDetailPage() {
         () => db.from('round_court_players').update({ substitute_name: substituteName.trim() || null }).eq('id', cpId),
         isPt ? 'Erro ao salvar suplente' : isEs ? 'Error al guardar suplente' : 'Failed to save substitute'
       );
+      await auditOperation('substitute.updated', { league_id: leagueId, round_id: roundId, round_court_player_id: cpId, has_substitute: Boolean(substituteName.trim()) }, leagueId, roundId);
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(
@@ -370,11 +374,22 @@ export default function RoundDetailPage() {
   // ── Status da rodada ────────────────────────────────────────
   const startRound = async () => {
     if (isMutating) return;
+    const incomplete = groups.filter((group) => group.players.length < 4).length;
+    if (groups.length === 0 || incomplete > 0) {
+      const message = groups.length === 0
+        ? (isPt ? 'Crie ao menos um grupo antes de iniciar.' : isEs ? 'Crea al menos un grupo antes de iniciar.' : 'Create at least one group before starting.')
+        : (isPt ? 'Complete todas as quadras antes de iniciar.' : isEs ? 'Completa todas las canchas antes de iniciar.' : 'Complete every court before starting.');
+      setActionError(message);
+      toast.warning(message);
+      return;
+    }
+
     setActionError(null);
     setStartingRound(true);
     try {
       await runOrThrow(() => db.from('rounds').update({ status: 'running' }).eq('id', roundId));
       toast.success(isPt ? 'Rodada iniciada.' : isEs ? 'Jornada iniciada.' : 'Round started.');
+      await auditOperation('round.started', { league_id: leagueId, round_id: roundId, group_count: groups.length }, leagueId, roundId);
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(
@@ -388,6 +403,34 @@ export default function RoundDetailPage() {
 
   const closeRound = async () => {
     if (!round) return;
+    if (isMutating) return;
+
+    const incomplete = groups.filter((group) => group.players.length < 4).length;
+    const attendancePending = groups.reduce(
+      (sum, group) => sum + group.players.filter((player) => player.attendance === 'absent' || (player.attendance === 'substitute' && !player.substitute_name?.trim())).length,
+      0
+    );
+    const scorePending = groups.reduce(
+      (sum, group) => sum + group.matches.filter((match) => match.score_team1 === null || match.score_team2 === null).length,
+      0
+    );
+
+    if (groups.length === 0 || incomplete > 0 || attendancePending > 0 || scorePending > 0) {
+      const blockers = [
+        groups.length === 0 ? (isPt ? 'sem grupos' : isEs ? 'sin grupos' : 'no groups') : null,
+        incomplete > 0 ? `${incomplete} ${isPt ? 'quadra(s) incompleta(s)' : isEs ? 'cancha(s) incompleta(s)' : 'incomplete court(s)'}` : null,
+        attendancePending > 0 ? `${attendancePending} ${isPt ? 'presenca(s) pendente(s)' : isEs ? 'asistencia(s) pendiente(s)' : 'pending attendance item(s)'}` : null,
+        scorePending > 0 ? `${scorePending} ${isPt ? 'placar(es) pendente(s)' : isEs ? 'marcador(es) pendiente(s)' : 'pending score(s)'}` : null,
+      ].filter(Boolean).join(', ');
+      const message = isPt
+        ? `Nao e possivel fechar ainda: ${blockers}.`
+        : isEs
+          ? `Todavia no se puede cerrar: ${blockers}.`
+          : `Cannot close yet: ${blockers}.`;
+      setActionError(message);
+      toast.warning(message);
+      return;
+    }
 
     const ok = await confirm({
       title: isPt ? 'Fechar rodada' : isEs ? 'Cerrar jornada' : 'Close round',
@@ -418,6 +461,12 @@ export default function RoundDetailPage() {
         isPt ? 'Erro ao fechar rodada' : isEs ? 'Error al cerrar jornada' : 'Failed to close round'
       );
       toast.success(isPt ? 'Rodada fechada. Ranking atualizado.' : isEs ? 'Jornada cerrada. Ranking actualizado.' : 'Round closed. Ranking updated.');
+      await auditOperation('round.closed', {
+        league_id: leagueId,
+        round_id: roundId,
+        confirmed_scores: pendingMatchIds.length,
+        group_count: groups.length,
+      }, leagueId, roundId);
       loadAll();
     } catch (error: any) {
       setActionError(getActionErrorMessage(

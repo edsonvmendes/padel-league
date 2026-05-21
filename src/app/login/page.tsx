@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase-browser';
 import { BrandMark } from '@/components/BrandMark';
 import { ProductSignature } from '@/components/ProductSignature';
 
@@ -81,15 +80,6 @@ const COPY: Record<LoginLocale, Record<string, string>> = {
   },
 };
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      window.setTimeout(() => reject(new Error('login-timeout')), timeoutMs);
-    }),
-  ]);
-}
-
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -123,8 +113,17 @@ export default function LoginPage() {
 
   const copy = COPY[locale];
 
-  const normalizeAuthError = (message: string) => {
+  const normalizeAuthError = (message: string, retryAfterSeconds?: number) => {
     const raw = message.toLowerCase();
+
+    if (raw.includes('rate_limited')) {
+      const minutes = retryAfterSeconds ? Math.max(1, Math.ceil(retryAfterSeconds / 60)) : 15;
+      return locale === 'pt'
+        ? `Muitas tentativas. Aguarde ${minutes} min antes de tentar novamente.`
+        : locale === 'es'
+          ? `Demasiados intentos. Espera ${minutes} min antes de intentar de nuevo.`
+          : `Too many attempts. Wait ${minutes} min before trying again.`;
+    }
 
     if (raw.includes('invalid login credentials')) {
       return locale === 'pt'
@@ -157,19 +156,24 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     setLoading(true);
     setError('');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
 
     try {
-      const supabase = createClient();
-      const loginResult = await withTimeout(
-        supabase.auth.signInWithPassword({ email, password }),
-        LOGIN_TIMEOUT_MS
-      ) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
-      const { error } = loginResult;
+      const response = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+        signal: controller.signal,
+      });
 
-      if (error) {
-        setError(normalizeAuthError(error.message));
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({ error: 'login_failed' }));
+        setError(normalizeAuthError(body.error || 'login_failed', body.retryAfterSeconds));
         setLoading(false);
       } else {
         router.replace('/app');
@@ -178,6 +182,8 @@ export default function LoginPage() {
     } catch {
       setError(normalizeAuthError('login-timeout'));
       setLoading(false);
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   };
 

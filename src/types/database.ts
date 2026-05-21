@@ -136,6 +136,16 @@ export interface Rules {
   updated_at: string;
 }
 
+export interface OperationalAuditLog {
+  id: string;
+  user_id: string | null;
+  league_id: string | null;
+  round_id: string | null;
+  action: string;
+  details: Record<string, any>;
+  created_at: string;
+}
+
 // ============================================================
 // TIPOS COMPOSTOS (joins frequentes)
 // ============================================================

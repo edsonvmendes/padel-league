@@ -14,7 +14,7 @@ import { Plus, Calendar, ChevronRight, X, Grid3X3, Lock, PlayCircle, AlertCircle
 export default function RoundsPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
   const { user, locale } = useAuth();
-  const { db, run, runOrThrow } = useDb();
+  const { db, run, runOrThrow, auditOperation } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -120,6 +120,17 @@ export default function RoundsPage() {
       return;
     }
 
+    if (groupCount === 0) {
+      toast.warning(
+        isPt
+          ? 'Selecione ao menos uma quadra para criar a rodada.'
+          : isEs
+            ? 'Selecciona al menos una cancha para crear la jornada.'
+            : 'Select at least one court to create the round.'
+      );
+      return;
+    }
+
     setCreating(true);
 
     try {
@@ -157,6 +168,13 @@ export default function RoundsPage() {
 
       setShowModal(false);
       toast.success(isPt ? `Rodada ${nextNumber} criada.` : isEs ? `Jornada ${nextNumber} creada.` : `Round ${nextNumber} created.`);
+      await auditOperation('round.created', {
+        league_id: leagueId,
+        round_id: newRound.id,
+        number: nextNumber,
+        round_date: modalDate,
+        group_count: groupCount,
+      }, leagueId, newRound.id);
       router.push(`/app/leagues/${leagueId}/rounds/${newRound.id}`);
     } finally {
       setCreating(false);
@@ -185,6 +203,7 @@ export default function RoundsPage() {
     );
 
     toast.success(isPt ? 'Rodada excluida.' : isEs ? 'Jornada eliminada.' : 'Round deleted.');
+    await auditOperation('round.deleted', { league_id: leagueId, round_id: round.id, number: round.number }, leagueId, round.id);
     loadAll();
   };
 

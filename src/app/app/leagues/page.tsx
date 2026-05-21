@@ -23,7 +23,7 @@ const WEEKDAY_ES: Record<string, string> = {
 
 export default function LeaguesPage() {
   const { user, locale } = useAuth();
-  const { db, run, runOrThrow } = useDb();
+  const { db, run, runOrThrow, auditOperation } = useDb();
   const toast = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -183,6 +183,7 @@ export default function LeaguesPage() {
       }
 
       toast.success(isPt ? `Liga "${newLeague.name}" criada.` : isEs ? `Liga "${newLeague.name}" creada.` : `League "${newLeague.name}" created.`);
+      await auditOperation('league.created', { league_id: newLeague.id, name: newLeague.name, template: form.template }, newLeague.id);
       setShowModal(false);
       setForm({ name: '', weekday: 'Thursday', template: 'custom' });
       setShowPresetTemplates(false);
@@ -294,6 +295,7 @@ export default function LeaguesPage() {
           ? `Liga "${duplicated.name}" creada a partir de la estructura actual.`
           : `League "${duplicated.name}" created from the current setup.`
     );
+    await auditOperation('league.duplicated', { league_id: duplicated.id, source_league_id: league.id, name: duplicated.name }, duplicated.id);
     load();
   };
 
@@ -318,6 +320,7 @@ export default function LeaguesPage() {
     );
 
     toast.success(isPt ? 'Liga excluida.' : isEs ? 'Liga eliminada.' : 'League deleted.');
+    await auditOperation('league.deleted', { league_id: league.id, name: league.name }, league.id);
     load();
   };
 

@@ -54,7 +54,25 @@ export function useDb() {
     return result.data;
   }, [run]);
 
-  return { db: supabase, run, runOrThrow };
+  const auditOperation = useCallback(async (
+    action: string,
+    details: Record<string, any> = {},
+    leagueId?: string | null,
+    roundId?: string | null
+  ) => {
+    try {
+      await supabase.from('operational_audit_log').insert({
+        action,
+        league_id: leagueId || details.league_id || null,
+        round_id: roundId || details.round_id || null,
+        details,
+      });
+    } catch {
+      // Best effort only: operational actions must not fail because audit storage is unavailable.
+    }
+  }, [supabase]);
+
+  return { db: supabase, run, runOrThrow, auditOperation };
 }
 
 /**
