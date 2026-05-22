@@ -36,7 +36,28 @@ function rateLimitedResponse(retryAfterSeconds: number) {
   );
 }
 
+function getAllowedOrigins(request: NextRequest) {
+  return new Set(
+    [
+      request.nextUrl.origin,
+      process.env.NEXT_PUBLIC_APP_URL,
+      process.env.NEXT_PUBLIC_SITE_URL,
+      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
+    ].filter(Boolean)
+  );
+}
+
+function isAllowedOrigin(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  if (!origin) return true;
+  return getAllowedOrigins(request).has(origin);
+}
+
 export async function POST(request: NextRequest) {
+  if (!isAllowedOrigin(request)) {
+    return NextResponse.json({ error: 'forbidden_origin' }, { status: 403 });
+  }
+
   let payload: { email?: unknown; password?: unknown };
 
   try {

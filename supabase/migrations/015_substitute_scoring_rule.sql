@@ -1,3 +1,11 @@
+-- Substitute scoring rule: substitutes do not score; the original player receives the absence rule.
+-- If use_min_actual_when_absent is enabled and the court minimum is worse than the penalty,
+-- the absent/substituted player receives the lower court score.
+
+UPDATE public.rules
+SET use_min_actual_when_absent = TRUE,
+    updated_at = now()
+WHERE scope = 'league';
 CREATE OR REPLACE FUNCTION public.close_round(p_round_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql

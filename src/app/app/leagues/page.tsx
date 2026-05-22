@@ -147,7 +147,7 @@ export default function LeaguesPage() {
           scope: 'league',
           league_id: newLeague.id,
           absence_penalty: template?.rules.absence_penalty ?? -5,
-          use_min_actual_when_absent: false,
+          use_min_actual_when_absent: true,
           three_absences_bonus: template?.rules.three_absences_bonus ?? 9,
           promotion_count: template?.rules.promotion_count ?? 1,
           relegation_count: template?.rules.relegation_count ?? 1,

@@ -713,7 +713,7 @@ export default function RoundDetailPage() {
   const totalGroups = groups.length;
   const incompleteGroups = groups.filter((group) => group.players.length < 4).length;
   const attendanceIssues = groups.reduce(
-    (sum, group) => sum + group.players.filter((player) => player.attendance !== 'present').length,
+    (sum, group) => sum + group.players.filter((player) => player.attendance === 'absent' || (player.attendance === 'substitute' && !player.substitute_name?.trim())).length,
     0
   );
   const pendingScores = groups.reduce(

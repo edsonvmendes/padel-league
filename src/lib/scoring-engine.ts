@@ -25,9 +25,10 @@ export function calculateGroupPoints(
   // Initialize all players with 0 points
   players.forEach(p => pointsMap.set(p.player_id, 0));
   
-  // Find present and absent players
-  const presentPlayers = players.filter(p => p.attendance === 'present' || p.attendance === 'substitute');
-  const absentPlayers = players.filter(p => p.attendance === 'absent');
+  // A substitute plays operationally, but does not score in the ranking.
+  // The original player receives the absence rule for that court.
+  const presentPlayers = players.filter(p => p.attendance === 'present');
+  const absentPlayers = players.filter(p => p.attendance === 'absent' || p.attendance === 'substitute');
   
   const absentCount = absentPlayers.length;
   

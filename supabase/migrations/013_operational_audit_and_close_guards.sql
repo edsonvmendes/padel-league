@@ -136,7 +136,7 @@ BEGIN
     INTO v_absent_count
     FROM round_court_players
     WHERE group_id = v_group.id
-      AND attendance = 'absent';
+      AND attendance IN ('absent', 'substitute');
 
     v_min_present := NULL;
 
@@ -144,7 +144,7 @@ BEGIN
       SELECT *
       FROM round_court_players
       WHERE group_id = v_group.id
-        AND attendance <> 'absent'
+        AND attendance = 'present'
     LOOP
       IF v_absent_count >= 3 THEN
         v_points := v_rules.three_absences_bonus;
@@ -186,7 +186,7 @@ BEGIN
       SELECT *
       FROM round_court_players
       WHERE group_id = v_group.id
-        AND attendance = 'absent'
+        AND attendance IN ('absent', 'substitute')
     LOOP
       v_points := v_rules.absence_penalty;
 

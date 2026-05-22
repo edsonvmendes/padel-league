@@ -724,8 +724,8 @@ function RulesTab({ league, rounds, rules, locale, onSaved }: { league: League; 
       </div>
 
       <RuleToggle
-        label={isPt ? 'Usar minimo real quando ausente' : isEs ? 'Usar minimo real si ausente' : 'Use actual min when absent'}
-        hint={isPt ? 'Se o minimo real for pior que a penalidade, usa o minimo real' : isEs ? 'Si el minimo real es peor que la penalizacion, usar el minimo real' : 'If actual min is worse than penalty, use actual min'}
+        label={isPt ? 'Usar minimo real para ausencia/suplente' : isEs ? 'Usar minimo real para ausencia/suplente' : 'Use actual min for absence/substitute'}
+        hint={isPt ? 'Se a menor pontuacao da quadra for pior que a penalidade, a ausente ou titular substituida recebe essa menor pontuacao.' : isEs ? 'Si la menor puntuacion de la cancha es peor que la penalizacion, la ausente o titular sustituida recibe esa menor puntuacion.' : 'If the court minimum is worse than the penalty, the absent or substituted player receives that lower score.'}
         value={form.use_min_actual_when_absent}
         onChange={(value) => updateField('use_min_actual_when_absent', value)}
       />
